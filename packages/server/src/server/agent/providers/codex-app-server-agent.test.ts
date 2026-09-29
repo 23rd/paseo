@@ -4324,6 +4324,69 @@ describe("Codex app-server provider", () => {
     });
   });
 
+  test("replays a legacy sub-agent that later finished as completed", async () => {
+    const session = createSession();
+    session.client = {
+      request: vi.fn(async (method: string, params: unknown) => {
+        if (method !== "thread/read") {
+          return {};
+        }
+        if ((params as { threadId?: string }).threadId !== "test-thread") {
+          return { thread: { turns: [] } };
+        }
+        return {
+          thread: {
+            turns: [
+              {
+                items: [
+                  {
+                    type: "collabAgentToolCall",
+                    id: "exec-spawn-history",
+                    tool: "spawnAgent",
+                    status: "completed",
+                    prompt: "Research child",
+                    receiverThreadIds: ["finished-child-thread"],
+                    agentsStates: { "finished-child-thread": { status: "pendingInit" } },
+                  },
+                  {
+                    type: "collabAgentToolCall",
+                    id: "exec-wait-history",
+                    tool: "wait",
+                    status: "completed",
+                    receiverThreadIds: ["finished-child-thread"],
+                    agentsStates: {
+                      "finished-child-thread": { status: "completed", message: "done" },
+                    },
+                  },
+                  {
+                    type: "collabAgentToolCall",
+                    id: "exec-close-history",
+                    tool: "closeAgent",
+                    status: "completed",
+                    receiverThreadIds: ["finished-child-thread"],
+                    agentsStates: { "finished-child-thread": { status: "completed" } },
+                  },
+                ],
+              },
+            ],
+          },
+        };
+      }),
+    };
+
+    await asInternals(session).loadPersistedHistory(session.client);
+
+    const history: AgentStreamEvent[] = [];
+    for await (const event of session.streamHistory()) {
+      history.push(event);
+    }
+    expect(
+      history.flatMap((event) =>
+        event.type === "provider_subagent" && event.event.type === "upsert" ? [event.event] : [],
+      ),
+    ).toMatchObject([{ type: "upsert", id: "finished-child-thread", status: "completed" }]);
+  });
+
   test("loads mixed legacy and MultiAgentV2 sub-agent history", async () => {
     const session = createSession();
     session.client = {
