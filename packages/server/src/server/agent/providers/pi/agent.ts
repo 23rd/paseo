@@ -1141,37 +1141,40 @@ function createRuntime(
   });
 }
 
+async function resolvePiUsageReference(provider: string | undefined, env?: Record<string, string>) {
+  let source: string | null = null;
+  if (provider === "openai-codex") source = "codex";
+  if (provider === "anthropic") source = "claude";
+  if (!source || !provider) return null;
+  try {
+    const auth: unknown = JSON.parse(
+      await readFile(join(resolvePiAgentDir(env), "auth.json"), "utf8"),
+    );
+    if (provider === "openai-codex") {
+      const credential = piCodexUsageAuthSchema.parse(auth)["openai-codex"];
+      if (!credential) return null;
+      return {
+        source,
+        input: {
+          accessToken: credential.access,
+          ...(credential.accountId ? { accountId: credential.accountId } : {}),
+        },
+      };
+    }
+    const credential = piClaudeUsageAuthSchema.parse(auth).anthropic;
+    return credential ? { source, input: { accessToken: credential.access } } : null;
+  } catch {
+    return null;
+  }
+}
+
 export class PiRpcAgentSession implements AgentSession {
   readonly provider: AgentProvider;
   readonly capabilities: AgentCapabilityFlags;
 
-  async getUsageReference() {
+  async getUsageContext() {
     await this.refreshState();
-    const provider = this.state.model?.provider;
-    let source: string | null = null;
-    if (provider === "openai-codex") source = "codex";
-    if (provider === "anthropic") source = "claude";
-    if (!source || !provider) return null;
-    try {
-      const auth: unknown = JSON.parse(
-        await readFile(join(resolvePiAgentDir(this.usageEnv), "auth.json"), "utf8"),
-      );
-      if (provider === "openai-codex") {
-        const credential = piCodexUsageAuthSchema.parse(auth)["openai-codex"];
-        if (!credential) return null;
-        return {
-          source,
-          input: {
-            accessToken: credential.access,
-            ...(credential.accountId ? { accountId: credential.accountId } : {}),
-          },
-        };
-      }
-      const credential = piClaudeUsageAuthSchema.parse(auth).anthropic;
-      return credential ? { source, input: { accessToken: credential.access } } : null;
-    } catch {
-      return null;
-    }
+    return { provider: this.state.model?.provider, env: this.usageEnv };
   }
 
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
@@ -2475,6 +2478,18 @@ export class PiRpcAgentClient implements AgentClient {
       options.runtime ??
       createRuntime(options.logger, options.runtimeSettings, this.providerParams.rpcTimeoutMs);
     this.usagePollScheduler = options.usagePollScheduler;
+  }
+
+  async resolveUsageReference({
+    config,
+    session,
+  }: {
+    config: AgentSessionConfig;
+    session: AgentSession | null;
+  }) {
+    const context = session instanceof PiRpcAgentSession ? await session.getUsageContext() : null;
+    const provider = context?.provider ?? config.model?.split("/")[0];
+    return resolvePiUsageReference(provider, context?.env ?? this.runtimeSettings?.env);
   }
 
   async createSession(

@@ -224,8 +224,17 @@ function createSessionWithConfig(
 
 test("ACP usage reference uses the provider ID", async () => {
   for (const provider of ["copilot", "cursor", "kimi", "custom-source"]) {
-    const session = createSessionWithConfig({ provider });
-    expect(await session.getUsageReference()).toEqual({ source: provider, input: {} });
+    const client = new ACPAgentClient({
+      provider,
+      logger: createTestLogger(),
+      defaultCommand: ["unused"],
+    });
+    expect(
+      await client.resolveUsageReference({
+        config: { provider, cwd: "/tmp/paseo-acp-test" },
+        session: null,
+      }),
+    ).toEqual({ source: provider, input: {} });
   }
 });
 

@@ -484,7 +484,10 @@ export class OmpHarness {
   }
 
   async getUsageReference() {
-    return this.requireSession().getUsageReference();
+    return this.client.resolveUsageReference({
+      config: { provider: "omp", cwd: CWD },
+      session: this.requireSession(),
+    });
   }
 
   runningToolCallIds(): string[] {

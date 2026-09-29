@@ -406,7 +406,12 @@ describe("PluginAgentClientRegistry", () => {
       cwd: "/workspace",
     });
     try {
-      expect(await session.getUsageReference?.()).toBeNull();
+      expect(
+        await client.resolveUsageReference?.({
+          config: { provider: harness.registration.id, cwd: "/workspace" },
+          session,
+        }),
+      ).toBeNull();
       expect(harness.inputs.some((input) => input.type === "session.usage_reference")).toBe(false);
     } finally {
       await session.close();

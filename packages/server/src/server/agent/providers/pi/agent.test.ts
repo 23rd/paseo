@@ -229,15 +229,16 @@ test("Pi usage reference follows the current OAuth model and agent directory", a
       runtime = sessionRuntime;
       runtime.state.model = { provider: "openai-codex", id: "gpt", name: "GPT" };
     });
-    const session = await createClient(pi).createSession(createConfig(), {
+    const client = createClient(pi);
+    const session = await client.createSession(createConfig(), {
       env: { PI_CODING_AGENT_DIR: agentDir },
     });
-    expect(await session.getUsageReference?.()).toEqual({
+    expect(await client.resolveUsageReference({ config: createConfig(), session })).toEqual({
       source: "codex",
       input: { accessToken: "codex-token", accountId: "account-1" },
     });
     runtime.state.model = { provider: "anthropic", id: "claude", name: "Claude" };
-    expect(await session.getUsageReference?.()).toEqual({
+    expect(await client.resolveUsageReference({ config: createConfig(), session })).toEqual({
       source: "claude",
       input: { accessToken: "claude-token" },
     });
@@ -249,7 +250,7 @@ test("Pi usage reference follows the current OAuth model and agent directory", a
       }),
     );
     runtime.state.model = { provider: "openai-codex", id: "gpt", name: "GPT" };
-    expect(await session.getUsageReference?.()).toEqual({
+    expect(await client.resolveUsageReference({ config: createConfig(), session })).toEqual({
       source: "codex",
       input: { accessToken: "codex-token" },
     });
@@ -258,10 +259,33 @@ test("Pi usage reference follows the current OAuth model and agent directory", a
       path.join(agentDir, "auth.json"),
       JSON.stringify({ anthropic: { type: "api_key", key: "api-key" } }),
     );
-    expect(await session.getUsageReference?.()).toBeNull();
+    expect(await client.resolveUsageReference({ config: createConfig(), session })).toBeNull();
     runtime.state.model = { provider: "other", id: "other", name: "Other" };
-    expect(await session.getUsageReference?.()).toBeNull();
+    expect(await client.resolveUsageReference({ config: createConfig(), session })).toBeNull();
     await session.close();
+  } finally {
+    rmSync(agentDir, { recursive: true, force: true });
+  }
+});
+
+test("Pi resolves a stored model without opening a session", async () => {
+  const agentDir = mkdtempSync(path.join(tmpdir(), "paseo-pi-stored-usage-"));
+  try {
+    writeFileSync(
+      path.join(agentDir, "auth.json"),
+      JSON.stringify({ anthropic: { type: "oauth", access: "claude-token", refresh: "refresh" } }),
+    );
+    const client = new PiRpcAgentClient({
+      logger: pino({ level: "silent" }),
+      runtime: new FakePi(),
+      runtimeSettings: { env: { PI_CODING_AGENT_DIR: agentDir } },
+    });
+    expect(
+      await client.resolveUsageReference({
+        config: createConfig({ model: "anthropic/claude-sonnet-4" }),
+        session: null,
+      }),
+    ).toEqual({ source: "claude", input: { accessToken: "claude-token" } });
   } finally {
     rmSync(agentDir, { recursive: true, force: true });
   }

@@ -882,6 +882,9 @@ function isACPCreateConfigUnattended(input: AgentCreateConfigUnattendedInput): b
 export class ACPAgentClient implements AgentClient {
   readonly provider: string;
   readonly capabilities: AgentCapabilityFlags;
+  async resolveUsageReference() {
+    return { source: this.provider, input: {} };
+  }
   readonly resolveCreateConfig = resolveACPCreateConfig;
   readonly isCreateConfigUnattended = isACPCreateConfigUnattended;
 
@@ -1632,10 +1635,6 @@ export class ACPAgentClient implements AgentClient {
 export class ACPAgentSession implements AgentSession, ACPClient {
   readonly provider: string;
   readonly capabilities: AgentCapabilityFlags;
-
-  async getUsageReference() {
-    return { source: this.provider, input: {} };
-  }
 
   private readonly logger: Logger;
   private readonly runtimeSettings?: ProviderRuntimeSettings;

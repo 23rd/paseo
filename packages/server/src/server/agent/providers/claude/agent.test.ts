@@ -531,16 +531,16 @@ describe("ClaudeAgentClient binary resolution", () => {
   const logger = createTestLogger();
 
   test("Claude usage reference follows CLAUDE_CONFIG_DIR and excludes API overrides", async () => {
-    const client = new ClaudeAgentClient({ logger, resolveBinary: async () => "/test/claude/bin" });
-    const session = await client.createSession(
-      { provider: "claude", cwd: process.cwd() },
-      { env: { CLAUDE_CONFIG_DIR: "/accounts/second" } },
-    );
-    expect(await session.getUsageReference?.()).toEqual({
+    const config = { provider: "claude", cwd: process.cwd() };
+    const client = new ClaudeAgentClient({
+      logger,
+      runtimeSettings: { env: { CLAUDE_CONFIG_DIR: "/accounts/second" } },
+      resolveBinary: async () => "/test/claude/bin",
+    });
+    expect(await client.resolveUsageReference?.({ config, session: null })).toEqual({
       source: "claude",
       input: { configDir: "/accounts/second" },
     });
-    await session.close();
   });
 
   test.each(["ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"])(
@@ -548,14 +548,15 @@ describe("ClaudeAgentClient binary resolution", () => {
     async (name) => {
       const client = new ClaudeAgentClient({
         logger,
+        runtimeSettings: { env: { [name]: "override" } },
         resolveBinary: async () => "/test/claude/bin",
       });
-      const session = await client.createSession(
-        { provider: "claude", cwd: process.cwd() },
-        { env: { [name]: "override" } },
-      );
-      expect(await session.getUsageReference?.()).toBeNull();
-      await session.close();
+      expect(
+        await client.resolveUsageReference?.({
+          config: { provider: "claude", cwd: process.cwd() },
+          session: null,
+        }),
+      ).toBeNull();
     },
   );
 
@@ -569,15 +570,16 @@ describe("ClaudeAgentClient binary resolution", () => {
         },
       },
     });
-    const session = await registry["work-claude"].createClient(logger).createSession({
-      provider: "work-claude",
-      cwd: process.cwd(),
-    });
-    expect(await session.getUsageReference?.()).toEqual({
+    const client = registry["work-claude"].createClient(logger);
+    expect(
+      await client.resolveUsageReference?.({
+        config: { provider: "work-claude", cwd: process.cwd() },
+        session: null,
+      }),
+    ).toEqual({
       source: "claude",
       input: { configDir: "/accounts/work" },
     });
-    await session.close();
   });
 
   test("resolves the installed Claude Code version", async () => {

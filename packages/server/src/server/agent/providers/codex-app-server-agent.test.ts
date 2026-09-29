@@ -172,41 +172,18 @@ function createSession(
 }
 
 test("Codex usage reference follows CODEX_HOME and excludes custom base URLs", async () => {
-  const session = new CodexAppServerAgentSession(
-    createConfig(),
-    null,
-    createTestLogger(),
-    () => {
-      throw new Error("unused");
-    },
-    {},
-    false,
-    false,
-    false,
-    undefined,
-    "interactive",
-    { CODEX_HOME: "/accounts/second" },
-  );
-  expect(await session.getUsageReference()).toEqual({
+  const config = createConfig();
+  const client = new CodexAppServerAgentClient(createTestLogger(), {
+    env: { CODEX_HOME: "/accounts/second" },
+  });
+  expect(await client.resolveUsageReference({ config, session: null })).toEqual({
     source: "codex",
     input: { codexHome: "/accounts/second" },
   });
-  const custom = new CodexAppServerAgentSession(
-    createConfig(),
-    null,
-    createTestLogger(),
-    () => {
-      throw new Error("unused");
-    },
-    {},
-    false,
-    false,
-    false,
-    undefined,
-    "interactive",
-    { CODEX_HOME: "/accounts/second", OPENAI_BASE_URL: "https://example.test" },
-  );
-  expect(await custom.getUsageReference()).toBeNull();
+  const custom = new CodexAppServerAgentClient(createTestLogger(), {
+    env: { CODEX_HOME: "/accounts/second", OPENAI_BASE_URL: "https://example.test" },
+  });
+  expect(await custom.resolveUsageReference({ config, session: null })).toBeNull();
 });
 
 function createProviderWithFakeAppServer(

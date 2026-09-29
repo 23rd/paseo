@@ -31,8 +31,13 @@ function usageReportsQueryKey(serverId: string) {
   return ["usage", "reports", serverId] as const;
 }
 
-function agentUsageQueryKey(serverId: string, agentId: string, model: string | null) {
-  return ["usage", "agent", serverId, agentId, model] as const;
+function agentUsageQueryKey(
+  serverId: string,
+  agentId: string,
+  model: string | null,
+  isRunning: boolean,
+) {
+  return ["usage", "agent", serverId, agentId, model, isRunning] as const;
 }
 
 function requireClient(serverId: string) {
@@ -160,8 +165,7 @@ export function useUsageByHost(): {
 /**
  * The usage report for the account an agent is spending. The daemon resolves the
  * report ID, which is re-resolved when the model changes (a new key) and when a
- * turn completes (the query is paused while the agent runs, and its data is always
- * stale, so resuming refetches). The report itself is read from the shared cache.
+ * turn completes (a new query key). The report itself is read from the shared cache.
  */
 export function useAgentUsage(
   serverId: string,
@@ -176,10 +180,10 @@ export function useAgentUsage(
     }),
   );
   const identity = useFetchQuery({
-    queryKey: agentUsageQueryKey(serverId, agentId, model),
+    queryKey: agentUsageQueryKey(serverId, agentId, model, isRunning),
     queryFn: async () =>
       (await requireClient(serverId).resolveAgentUsageReport({ agentId })).reportId,
-    enabled: isConnected && isSupported && !isRunning,
+    enabled: isConnected && isSupported,
     dataShape: "value",
     staleTimeMs: 0,
   });

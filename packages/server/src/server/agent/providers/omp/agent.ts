@@ -969,9 +969,13 @@ export class OmpAgentSession implements AgentSession {
   private readonly paseoTools?: PaseoToolCatalog;
   private readonly usageEnv: NodeJS.ProcessEnv;
 
-  async getUsageReference() {
+  async getUsageContext() {
     const state = await this.runtimeSession.getState();
-    return resolveOmpUsageReference(state.sessionId, state.model?.provider ?? "", this.usageEnv);
+    return {
+      sessionId: state.sessionId,
+      provider: state.model?.provider ?? "",
+      env: this.usageEnv,
+    };
   }
 
   get id(): string | null {
@@ -2272,6 +2276,18 @@ export class OmpAgentClient implements AgentClient {
     this.usagePollScheduler = options.usagePollScheduler;
     this.runtime =
       options.runtime ?? createRuntime(options.logger, runtimeSettings, this.providerParams);
+  }
+
+  async resolveUsageReference({
+    session,
+  }: {
+    config: AgentSessionConfig;
+    session: AgentSession | null;
+  }) {
+    // OMP's credential lookup needs the runtime session ID, which stored config does not contain.
+    if (!(session instanceof OmpAgentSession)) return null;
+    const { sessionId, provider, env } = await session.getUsageContext();
+    return resolveOmpUsageReference(sessionId, provider, env);
   }
 
   private async configureNativePaseoTools(

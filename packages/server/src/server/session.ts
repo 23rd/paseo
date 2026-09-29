@@ -1000,7 +1000,7 @@ export class Session {
     this.usageSession = new UsageSession({
       emit: (msg) => this.emit(msg),
       listAgents: () => this.agentManager.listAgents(),
-      getAgent: (agentId) => this.agentManager.getAgent(agentId),
+      resolveAgentReference: (agentId) => this.agentManager.resolveUsageReference(agentId),
       runtime: pluginRuntime,
       logger: this.sessionLogger,
     });

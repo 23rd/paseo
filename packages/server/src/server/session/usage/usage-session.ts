@@ -1,16 +1,20 @@
 import type pino from "pino";
 import type { ProviderUsage, UsageReportEntry } from "@getpaseo/protocol/messages";
-import type { AgentSession, UsageReference } from "../../agent/agent-sdk-types.js";
+import type { UsageReference } from "../../agent/agent-sdk-types.js";
 import type { SessionInboundMessage, SessionOutboundMessage } from "../../messages.js";
 
 interface UsageAgent {
-  session: AgentSession | null;
+  id: string;
+  session: object | null;
 }
 
 export interface UsageSessionOptions {
   emit(message: SessionOutboundMessage): void;
   listAgents(): UsageAgent[];
-  getAgent(agentId: string): UsageAgent | null;
+  resolveAgentReference(agentId: string): Promise<{
+    found: boolean;
+    reference: UsageReference | null;
+  }>;
   runtime?: {
     listUsageReports(options: {
       forceRefresh?: boolean;
@@ -37,8 +41,12 @@ export class UsageSession {
               await Promise.all(
                 this.options
                   .listAgents()
-                  .map(
-                    async (agent) => agent.session?.getUsageReference?.().catch(() => null) ?? null,
+                  .filter((agent) => agent.session !== null)
+                  .map(async (agent) =>
+                    this.options
+                      .resolveAgentReference(agent.id)
+                      .then((resolved) => resolved.reference)
+                      .catch(() => null),
                   ),
               )
             ).filter((reference): reference is UsageReference => reference !== null)
@@ -62,12 +70,12 @@ export class UsageSession {
   ): Promise<void> {
     try {
       if (!this.options.runtime) throw new Error("Plugin runtime is unavailable");
-      const agent = this.options.getAgent(msg.agentId);
-      if (!agent) {
+      const resolved = await this.options.resolveAgentReference(msg.agentId);
+      if (!resolved.found) {
         this.emitError(msg, new Error(`Agent not found: ${msg.agentId}`), "agent_not_found");
         return;
       }
-      const reference = (await agent.session?.getUsageReference?.()) ?? null;
+      const reference = resolved.reference;
       const reportId = reference
         ? await this.options.runtime.resolveUsageReference(reference)
         : null;

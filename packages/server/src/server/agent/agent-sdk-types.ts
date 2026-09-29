@@ -673,8 +673,6 @@ export interface AgentSession {
   /** New provider-owned rows to commit on registration. streamHistory must also
    * replay them at their original timestamps; restored sessions omit old rows. */
   readonly initialTimeline?: ImportedTimelineEntry[];
-  /** Resolved at fetch time because model and credentials may change during a session. */
-  getUsageReference?(): Promise<UsageReference | null>;
   run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult>;
   startTurn(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<{ turnId: string }>;
   steerActiveTurn?(prompt: AgentPromptInput, options: SteerActiveTurnOptions): Promise<SteerResult>;
@@ -750,6 +748,11 @@ export interface ResolveAgentDefaultModeInput {
 export interface AgentClient {
   readonly provider: AgentProvider;
   readonly capabilities: AgentCapabilityFlags;
+  /** Account used by the agent. Resolving this must not start or load a session. */
+  resolveUsageReference?(input: {
+    config: AgentSessionConfig;
+    session: AgentSession | null;
+  }): Promise<UsageReference | null>;
   createSession(
     config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,

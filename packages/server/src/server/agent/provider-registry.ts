@@ -458,7 +458,6 @@ export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession
       }
     },
     getRuntimeInfo: async () => mapRuntimeInfo(provider, await inner.getRuntimeInfo()),
-    getUsageReference: inner.getUsageReference?.bind(inner),
     getAvailableModes: () => inner.getAvailableModes(),
     getCurrentMode: () => inner.getCurrentMode(),
     setMode: (modeId) => inner.setMode(modeId),
@@ -490,13 +489,25 @@ function wrapClientProvider(
   const listFeatures = inner.listFeatures?.bind(inner);
   const archiveNativeSession = inner.archiveNativeSession?.bind(inner);
   const unarchiveNativeSession = inner.unarchiveNativeSession?.bind(inner);
+  const sessions = new WeakMap<AgentSession, AgentSession>();
+  const wrapSession = (session: AgentSession) => {
+    const wrapped = wrapSessionProvider(provider, session);
+    sessions.set(wrapped, session);
+    return wrapped;
+  };
 
   return {
     provider,
     capabilities: inner.capabilities,
+    resolveUsageReference: inner.resolveUsageReference
+      ? ({ config, session }) =>
+          inner.resolveUsageReference!({
+            config: { ...config, provider: inner.provider },
+            session: session ? (sessions.get(session) ?? null) : null,
+          })
+      : undefined,
     createSession: async (config, launchContext) =>
-      wrapSessionProvider(
-        provider,
+      wrapSession(
         await inner.createSession(
           {
             ...config,
@@ -506,8 +517,7 @@ function wrapClientProvider(
         ),
       ),
     resumeSession: async (handle, overrides, launchContext, options) =>
-      wrapSessionProvider(
-        provider,
+      wrapSession(
         await inner.resumeSession(
           {
             ...handle,
@@ -569,7 +579,7 @@ function wrapClientProvider(
           }
           return {
             ...imported,
-            session: wrapSessionProvider(provider, imported.session),
+            session: wrapSession(imported.session),
             config: {
               ...imported.config,
               provider,

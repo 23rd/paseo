@@ -1519,6 +1519,15 @@ export class ClaudeAgentClient implements AgentClient {
     this.rewindSdk = options.rewindSdk ?? realClaudeRewindSdk;
   }
 
+  async resolveUsageReference() {
+    const env = createProviderEnv({ baseEnv: process.env, runtimeSettings: this.runtimeSettings });
+    if (env.ANTHROPIC_BASE_URL || env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return null;
+    return {
+      source: "claude",
+      input: { configDir: env.CLAUDE_CONFIG_DIR || path.join(env.HOME || homedir(), ".claude") },
+    };
+  }
+
   resolveConfiguredModel(model: AgentModelDefinition): AgentModelDefinition {
     return resolveConfiguredClaudeModel(model);
   }
@@ -2041,15 +2050,6 @@ class ClaudeContextUsageState {
 class ClaudeAgentSession implements AgentSession {
   readonly provider = "claude" as const;
   readonly capabilities = CLAUDE_CAPABILITIES;
-
-  async getUsageReference() {
-    const env = this.buildSdkEnv();
-    if (env.ANTHROPIC_BASE_URL || env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return null;
-    return {
-      source: "claude",
-      input: { configDir: env.CLAUDE_CONFIG_DIR || path.join(env.HOME || homedir(), ".claude") },
-    };
-  }
 
   private readonly config: ClaudeAgentConfig;
   private readonly launchEnv?: Record<string, string>;

@@ -420,19 +420,28 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
       },
       { serverManager: runtime, createClient: runtime.createClient },
     );
+    expect(
+      await client.resolveUsageReference({
+        config: { ...buildConfig(cwd), model: "openai/gpt-5" },
+        session: null,
+      }),
+    ).toEqual({
+      source: "codex",
+      input: { accessToken: "oauth-token", accountId: "acct-1" },
+    });
     const session = await client.createSession(buildConfig(cwd));
     await session.setModel?.("openai/gpt-5");
-    expect(await session.getUsageReference?.()).toEqual({
+    expect(await client.resolveUsageReference({ config: buildConfig(cwd), session })).toEqual({
       source: "codex",
       input: { accessToken: "oauth-token", accountId: "acct-1" },
     });
     await session.setModel?.("opencode-go/qwen");
-    expect(await session.getUsageReference?.()).toEqual({
+    expect(await client.resolveUsageReference({ config: buildConfig(cwd), session })).toEqual({
       source: "opencode-go",
       input: { apiKey: "go-key" },
     });
     await session.setModel?.("other/model");
-    expect(await session.getUsageReference?.()).toBeNull();
+    expect(await client.resolveUsageReference({ config: buildConfig(cwd), session })).toBeNull();
     const events: AgentStreamEvent[] = [];
     session.subscribe((event) => events.push(event));
     const sessionId = (await session.getRuntimeInfo()).sessionId;
@@ -448,7 +457,7 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
       },
     } as OpenCodeEvent);
     await vi.waitFor(async () =>
-      expect(await session.getUsageReference?.()).toEqual({
+      expect(await client.resolveUsageReference({ config: buildConfig(cwd), session })).toEqual({
         source: "codex",
         input: { accessToken: "oauth-token", accountId: "acct-1" },
       }),
@@ -487,7 +496,7 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     const session = await client.createSession(buildConfig(cwd));
     try {
       await session.setModel?.("opencode-go/qwen");
-      expect(await session.getUsageReference?.()).toEqual({
+      expect(await client.resolveUsageReference({ config: buildConfig(cwd), session })).toEqual({
         source: "opencode-go",
         input: { apiKey: "go-key" },
       });

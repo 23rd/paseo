@@ -1,10 +1,8 @@
 import { fileURLToPath } from "node:url";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { expect, test } from "vitest";
-import { ACPAgentSession } from "../agent/providers/acp-agent.js";
-import type { UsageReference } from "../agent/agent-sdk-types.js";
-import { ClaudeAgentClient } from "../agent/providers/claude/agent.js";
-import { CodexAppServerAgentSession } from "../agent/providers/codex-app-server-agent.js";
-import { createTestLogger } from "../../test-utils/test-logger.js";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestAgentClient } from "../test-utils/fake-agent-client.js";
 import { createTestPaseoDaemon } from "../test-utils/paseo-daemon.js";
@@ -53,75 +51,21 @@ test("resolves a provider plugin session reference through its usage source", as
   }
 }, 60_000);
 
-test("agent.resolve_usage_report resolves source IDs from default built-in and ACP sessions", async () => {
+test("agent.resolve_usage_report resolves source IDs from provider clients", async () => {
   const directory = fileURLToPath(
     new URL("./test-fixtures/session-usage-reference/", import.meta.url),
   );
   const providers = ["claude", "codex", "copilot", "cursor", "kimi", "generic-acp"] as const;
-  const logger = createTestLogger();
-  const references = new Map<string, UsageReference | null>();
-  const claude = await new ClaudeAgentClient({
-    logger,
-    resolveBinary: async () => "/test/claude/bin",
-  }).createSession(
-    { provider: "claude", cwd: directory },
-    {
-      env: {
-        HOME: directory,
-        CLAUDE_CONFIG_DIR: "",
-        ANTHROPIC_BASE_URL: "",
-        ANTHROPIC_API_KEY: "",
-        ANTHROPIC_AUTH_TOKEN: "",
-      },
-    },
-  );
-  references.set("claude", (await claude.getUsageReference?.()) ?? null);
-  await claude.close();
-  const codex = new CodexAppServerAgentSession(
-    { provider: "codex", cwd: directory },
-    null,
-    logger,
-    () => {
-      throw new Error("Codex runtime should not start");
-    },
-    {},
-    false,
-    false,
-    false,
-    undefined,
-    "interactive",
-    { HOME: directory, OPENAI_BASE_URL: "" },
-  );
-  references.set("codex", await codex.getUsageReference());
-  for (const provider of providers.slice(2)) {
-    const session = new ACPAgentSession(
-      { provider, cwd: directory },
-      {
-        provider,
-        logger,
-        defaultCommand: ["unused"],
-        defaultModes: [],
-        capabilities: {
-          supportsStreaming: true,
-          supportsSessionPersistence: true,
-          supportsDynamicModes: true,
-          supportsMcpServers: true,
-          supportsReasoningStream: true,
-          supportsToolInvocations: true,
-        },
-      },
-    );
-    references.set(provider, await session.getUsageReference());
-  }
   const agentClients = Object.fromEntries(
     providers.map((provider) => {
       const client = createTestAgentClient(provider);
-      const createSession = client.createSession.bind(client);
-      client.createSession = async (...args) => {
-        const session = await createSession(...args);
-        session.getUsageReference = async () => references.get(provider) ?? null;
-        return session;
-      };
+      let input: Record<string, string> = {};
+      if (provider === "claude") input = { configDir: directory };
+      if (provider === "codex") input = { codexHome: directory };
+      client.resolveUsageReference = async () => ({
+        source: provider,
+        input,
+      });
       return [provider, client];
     }),
   );
@@ -146,5 +90,66 @@ test("agent.resolve_usage_report resolves source IDs from default built-in and A
   } finally {
     await client.close();
     await daemon.close();
+  }
+}, 60_000);
+
+test("stored Claude and Codex agents resolve without opening a provider session", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "paseo-usage-closed-"));
+  const staticDir = await mkdtemp(path.join(os.tmpdir(), "paseo-usage-static-"));
+  const sessionsOpened = new Map<string, number>();
+  const agentClients = Object.fromEntries(
+    ["claude", "codex"].map((provider) => {
+      const providerClient = createTestAgentClient(provider, {
+        beforeCreateSession: async () => {
+          sessionsOpened.set(provider, (sessionsOpened.get(provider) ?? 0) + 1);
+        },
+      });
+      providerClient.resolveUsageReference = async ({ session }) => {
+        expect(session).toBeNull();
+        return { source: "fixture-session-usage", input: { account: "from-session" } };
+      };
+      return [provider, providerClient];
+    }),
+  );
+  const options = {
+    paseoHomeRoot: root,
+    staticDir,
+    cleanup: false,
+    pluginsEnabled: false,
+    builtinPlugins: fixtureBuiltins(),
+    agentClients,
+  };
+  let daemon = await createTestPaseoDaemon(options);
+  let client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+  try {
+    await client.connect();
+    const ids: string[] = [];
+    for (const provider of ["claude", "codex"]) {
+      const agent = await client.createAgent({ provider, cwd: root });
+      ids.push(agent.id);
+      await client.sendMessage(agent.id, "Say OK.");
+      await client.waitForAgentUpsert(agent.id, (snapshot) => snapshot.status === "idle");
+      expect(sessionsOpened.get(provider)).toBe(1);
+    }
+    await client.close();
+    await daemon.close();
+
+    daemon = await createTestPaseoDaemon(options);
+    client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+    await client.connect();
+    await client.fetchAgents({ subscribe: {} });
+    for (const [index, provider] of ["claude", "codex"].entries()) {
+      const result = await client.resolveAgentUsageReport({ agentId: ids[index]! });
+      expect(result.reportId).toBe("fixture-session-usage:from-session");
+      expect(
+        (await client.listUsageReports({ reportIds: [result.reportId!] })).reports,
+      ).toHaveLength(1);
+      expect(sessionsOpened.get(provider)).toBe(1);
+    }
+  } finally {
+    await client.close().catch(() => undefined);
+    await daemon.close().catch(() => undefined);
+    await rm(root, { recursive: true, force: true });
+    await rm(staticDir, { recursive: true, force: true });
   }
 }, 60_000);

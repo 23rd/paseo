@@ -1,7 +1,11 @@
 import type { UsageReportEntry } from "@getpaseo/protocol/messages";
 import { expect, test, type Page } from "../support/fixtures";
 import { expectComposerVisible, submitMessage } from "../support/helpers/composer";
-import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
+import {
+  openAgentRoute,
+  seedMockAgentWorkspace,
+  seedRunningMockAgentWorkspace,
+} from "../support/helpers/mock-agent";
 import { installUsageReportsFixture } from "../support/helpers/usage-reports";
 
 const REPORT_ID = "fixture:fixture-account";
@@ -42,6 +46,30 @@ async function openMockAgent(page: Page) {
 }
 
 test.describe("usage composer pill", () => {
+  test("shows the report when an existing running chat opens", async ({ page }) => {
+    test.setTimeout(180_000);
+    const usage = await installUsageReportsFixture(page, {
+      agentReportIds: [REPORT_ID],
+      lists: [[agentEntry(42)]],
+    });
+    const session = await seedRunningMockAgentWorkspace({
+      repoPrefix: "usage-running-",
+      title: "Running usage pill",
+      initialPrompt: "Show usage during the turn.",
+      model: "one-minute-stream",
+    });
+    try {
+      await openAgentRoute(page, session);
+      await expectComposerVisible(page);
+      await expect(page.getByTestId("usage-composer-pill")).toContainText("42%", {
+        timeout: 20_000,
+      });
+      expect(usage.agentRequests()[0]).toEqual({ agentId: session.agentId });
+    } finally {
+      await session.cleanup();
+    }
+  });
+
   test("opens the cached report without a request and shows when it was fetched", async ({
     page,
   }) => {

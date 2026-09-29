@@ -50,6 +50,7 @@ import {
   type AgentTimelineItem,
   type AgentUsage,
   type AgentRuntimeInfo,
+  type UsageReference,
   type ImportedTimelineEntry,
   type ImportableProviderSession,
   type ListImportableSessionsOptions,
@@ -1165,6 +1166,22 @@ export class AgentManager {
   getAgent(id: string): ManagedAgent | null {
     const agent = this.agents.get(id);
     return agent ? { ...agent } : null;
+  }
+
+  async resolveUsageReference(
+    id: string,
+  ): Promise<{ found: boolean; reference: UsageReference | null }> {
+    const agent = this.getAgent(id);
+    const stored = agent ? null : await this.registry?.get(id);
+    if (!agent && !stored) return { found: false, reference: null };
+    const provider = agent?.provider ?? stored!.provider;
+    const config = agent?.config ?? buildStoredAgentConfig(stored!);
+    const reference =
+      (await this.clients.get(provider)?.resolveUsageReference?.({
+        config,
+        session: agent?.session ?? null,
+      })) ?? null;
+    return { found: true, reference };
   }
 
   async waitForAgentClose(agentId: string): Promise<void> {

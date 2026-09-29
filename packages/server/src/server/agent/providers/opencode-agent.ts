@@ -1445,6 +1445,22 @@ export class OpenCodeAgentClient implements AgentClient {
     this.resolveHomeDir = deps.resolveHomeDir ?? resolveOpenCodeHomeDir;
   }
 
+  async resolveUsageReference({
+    config,
+    session,
+  }: {
+    config: AgentSessionConfig;
+    session: AgentSession | null;
+  }): Promise<UsageReference | null> {
+    const model = session ? (await session.getRuntimeInfo()).model : config.model;
+    if (!model?.startsWith("openai/") && !model?.startsWith("opencode-go/")) return null;
+    const env =
+      session instanceof OpenCodeAgentSession
+        ? session.getUsageEnvironment()
+        : { ...process.env, ...this.runtimeSettings?.env };
+    return resolveOpenCodeUsageReference(model, await readOpenCodeUsageAuth(env));
+  }
+
   async createSession(
     config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,
@@ -3620,11 +3636,8 @@ class OpenCodeAgentSession implements AgentSession {
     };
   }
 
-  async getUsageReference(): Promise<UsageReference | null> {
-    const model = this.config.model;
-    if (!model?.startsWith("openai/") && !model?.startsWith("opencode-go/")) return null;
-    const auth = await readOpenCodeUsageAuth(this.usageEnv);
-    return resolveOpenCodeUsageReference(model, auth);
+  getUsageEnvironment(): NodeJS.ProcessEnv {
+    return this.usageEnv;
   }
 
   async setModel(modelId: string | null): Promise<void> {

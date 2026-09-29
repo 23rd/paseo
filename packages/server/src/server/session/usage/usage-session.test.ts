@@ -1,6 +1,5 @@
 import pino from "pino";
 import { expect, test } from "vitest";
-import type { AgentSession } from "../../agent/agent-sdk-types.js";
 import type { SessionOutboundMessage } from "../../messages.js";
 import { UsageSession } from "./usage-session.js";
 
@@ -9,9 +8,8 @@ test("collects live references for usage reports and resolves an agent report", 
   const references: unknown[] = [];
   const reference = { source: "fixture", input: { account: "one" } };
   const agent = {
-    session: {
-      getUsageReference: async () => reference,
-    } as AgentSession,
+    id: "one",
+    session: {},
   };
   const entry = {
     id: "fixture:one",
@@ -23,8 +21,8 @@ test("collects live references for usage reports and resolves an agent report", 
   };
   const usage = new UsageSession({
     emit: (message) => emitted.push(message),
-    listAgents: () => [agent, { session: null }],
-    getAgent: (id) => (id === "one" ? agent : null),
+    listAgents: () => [agent, { id: "closed", session: null }],
+    resolveAgentReference: async (id) => ({ found: id === "one", reference }),
     runtime: {
       async listUsageReports(options) {
         references.push(options.references);
@@ -59,7 +57,7 @@ test("surfaces a legacy usage-list failure as an rpc_error envelope", async () =
   const usage = new UsageSession({
     emit: (message) => emitted.push(message),
     listAgents: () => [],
-    getAgent: () => null,
+    resolveAgentReference: async () => ({ found: false, reference: null }),
     runtime: {
       async listUsageReports() {
         return [];
@@ -85,7 +83,7 @@ test("unknown agent returns agent_not_found", async () => {
   const usage = new UsageSession({
     emit: (message) => emitted.push(message),
     listAgents: () => [],
-    getAgent: () => null,
+    resolveAgentReference: async () => ({ found: false, reference: null }),
     runtime: {
       listUsageReports: async () => [],
       resolveUsageReference: async () => null,

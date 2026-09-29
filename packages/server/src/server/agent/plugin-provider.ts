@@ -897,6 +897,15 @@ class PluginAgentClient implements AgentClient {
     return agentCapabilities(this.runtime.negotiatedCapabilities);
   }
 
+  async resolveUsageReference({
+    session,
+  }: {
+    config: AgentSessionConfig;
+    session: AgentSession | null;
+  }) {
+    return session instanceof PluginAgentSession ? session.getPluginUsageReference() : null;
+  }
+
   async createSession(
     config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,
@@ -1096,7 +1105,7 @@ class PluginAgentSession implements AgentSession {
     return agentCapabilities(this.bridge.negotiatedCapabilities);
   }
 
-  getUsageReference(): Promise<UsageReference | null> {
+  getPluginUsageReference(): Promise<UsageReference | null> {
     return this.bridge.getUsageReference();
   }
 
