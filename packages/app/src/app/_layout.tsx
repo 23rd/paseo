@@ -15,7 +15,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { AppState, useWindowDimensions, View } from "react-native";
+import { AppState, View, type LayoutChangeEvent } from "react-native";
 import { GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -50,6 +50,7 @@ import {
   HEADER_INNER_HEIGHT,
   useIsCompactFormFactor,
 } from "@/constants/layout";
+import { MeasuredWindowWidthProvider, useLayoutWindowWidth } from "@/constants/window-width";
 import {
   canDesktopAppSidebarShare,
   resolveDesktopAppChromeLayout,
@@ -87,6 +88,7 @@ import { useGlobalNewWorkspaceAction } from "@/hooks/use-global-new-workspace-ac
 import { useLatchedBoolean } from "@/hooks/use-latched-boolean";
 import { useFaviconStatus } from "@/hooks/use-favicon-status";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useAdaptiveOrientation } from "@/orientation";
 import { resolveExplorerSidebarPresentation } from "@/workspace-tabs/explorer-sidebar";
 import { KeyboardShiftProvider } from "@/keyboard/shift";
 import { useCompactWebViewportZoomLock } from "@/hooks/use-compact-web-viewport-zoom-lock";
@@ -457,6 +459,7 @@ interface AppContainerProps {
 const WINDOW_SIDEBAR_TOGGLE_HORIZONTAL_PADDING = 12;
 
 function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppContainerProps) {
+  const isOrientationReady = useAdaptiveOrientation();
   const keyboardActionDispatcher = useKeyboardActionDispatcher();
   const daemons = useHosts();
   const { settings, updateSettings } = useAppSettings();
@@ -466,7 +469,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
   const isFocusModeEnabled = usePanelStore((state) => state.desktop.focusModeEnabled);
   const isDesktopAgentListOpen = usePanelStore((state) => state.desktop.agentListOpen);
   const sidebarWidth = usePanelStore((state) => state.sidebarWidth);
-  const { width: viewportWidth } = useWindowDimensions();
+  const viewportWidth = useLayoutWindowWidth();
 
   const cycleTheme = useCallback(() => {
     void updateSettings({ theme: getNextThemePreference(settings.theme) });
@@ -621,6 +624,8 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
   ) : (
     surface
   );
+
+  if (!isOrientationReady) return null;
 
   return <CommandCenterProvider>{content}</CommandCenterProvider>;
 }
@@ -967,16 +972,23 @@ function RootProviders({ children }: { children: ReactNode }) {
 }
 
 function RootAppTree() {
+  const [measuredWindowWidth, setMeasuredWindowWidth] = useState<number | null>(null);
+  const handleRootLayout = useCallback((event: LayoutChangeEvent) => {
+    const width = event.nativeEvent.layout.width;
+    if (width > 0) setMeasuredWindowWidth((current) => (current === width ? current : width));
+  }, []);
   return (
-    <GestureHandlerRootView style={flexStyle}>
-      <View style={layoutStyles.surfaceFill}>
-        <RootProviders>
-          <RuntimeProviders>
-            <AppShell />
-          </RuntimeProviders>
-        </RootProviders>
-      </View>
-    </GestureHandlerRootView>
+    <MeasuredWindowWidthProvider width={measuredWindowWidth}>
+      <GestureHandlerRootView style={flexStyle} onLayout={handleRootLayout}>
+        <View style={layoutStyles.surfaceFill}>
+          <RootProviders>
+            <RuntimeProviders>
+              <AppShell />
+            </RuntimeProviders>
+          </RootProviders>
+        </View>
+      </GestureHandlerRootView>
+    </MeasuredWindowWidthProvider>
   );
 }
 
