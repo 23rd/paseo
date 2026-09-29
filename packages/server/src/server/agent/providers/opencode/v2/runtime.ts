@@ -5,6 +5,7 @@ import type { V2Api } from "./api.js";
 import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import type { Logger } from "pino";
+import { Agent } from "undici";
 import { spawnProcess } from "../../../../../utils/spawn.js";
 import { terminateWithTreeKill } from "../../../../../utils/tree-kill.js";
 import {
@@ -174,6 +175,9 @@ export class V2Runtime {
       }),
     });
     const processAbort = new AbortController();
+    // session.wait answers only once the session is idle, so a header deadline would fail any
+    // turn that outlasts it. Requests end when the helper exits or the caller aborts instead.
+    const dispatcher = new Agent({ headersTimeout: 0 });
     const exited = new Promise<Error>((resolve) =>
       process.once("exit", (code) => {
         const error = new Error(`OpenCode helper server exited (${code})`);
@@ -199,6 +203,7 @@ export class V2Runtime {
     const stop = () => {
       stopped ??= (async () => {
         await terminateWithTreeKill(process, { gracefulTimeoutMs: 5_000, forceTimeoutMs: 1_000 });
+        await dispatcher.destroy();
         const entry = await record;
         if (entry) await managedProcesses?.remove(entry.id);
       })();
@@ -243,7 +248,9 @@ export class V2Runtime {
           const signal = init?.signal
             ? AbortSignal.any([init.signal, processAbort.signal])
             : processAbort.signal;
-          const response = await fetch(request, { ...init, signal });
+          // Node's fetch accepts an undici dispatcher, which the DOM RequestInit type omits.
+          const requestInit: RequestInit & { dispatcher: Agent } = { ...init, signal, dispatcher };
+          const response = await fetch(request, requestInit);
           const html = response.headers.get("content-type")?.includes("text/html") ?? false;
           if (!response.ok || html) {
             const requestUrl = request instanceof Request ? request.url : String(request);
