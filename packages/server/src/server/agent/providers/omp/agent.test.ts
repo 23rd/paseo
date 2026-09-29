@@ -194,14 +194,20 @@ describe("OMP agent client and session", () => {
         expires: Date.now() + 60_000,
       }),
     );
+    db.prepare("INSERT INTO cache (key, value, expires_at) VALUES (?, ?, ?)").run(
+      "session:sticky:openai-codex:omp-session-1",
+      JSON.stringify({ type: "oauth", credentialId: 1 }),
+      Math.floor(Date.now() / 1000) + 100,
+    );
     db.close();
     try {
-      const omp = new OmpHarness();
-      await omp.start({}, undefined, {
+      const env = {
         OMP_PROFILE: "",
         PI_CODING_AGENT_DIR: agentDir,
         XDG_DATA_HOME: "",
-      });
+      };
+      const omp = new OmpHarness({ env });
+      await omp.start({}, undefined, env);
       const runtime = omp.runtime();
       runtime.state = { ...runtime.state, model: { provider: "openai-codex", id: "codex-model" } };
       const requestsBefore = runtime.getStateRequestCount;
@@ -216,6 +222,20 @@ describe("OMP agent client and session", () => {
         input: { accessToken: "claude-fixture" },
       });
       expect(runtime.getStateRequestCount).toBe(requestsBefore + 2);
+      const beforeClosed = runtime.getStateRequestCount;
+      expect(
+        await omp.getStoredUsageReference("openai-codex/codex-model", "omp-session-1"),
+      ).toEqual({
+        source: "codex",
+        input: { accessToken: "codex-fixture", accountId: "codex-account" },
+      });
+      expect(
+        await omp.getStoredUsageReference("openai-codex/codex-model", "omp-session-1", null),
+      ).toEqual({
+        source: "codex",
+        input: { accessToken: "codex-fixture", accountId: "codex-account" },
+      });
+      expect(runtime.getStateRequestCount).toBe(beforeClosed);
       await omp.close();
     } finally {
       rmSync(home, { recursive: true, force: true });

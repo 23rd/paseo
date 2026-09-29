@@ -1172,13 +1172,15 @@ export class AgentManager {
     id: string,
   ): Promise<{ found: boolean; reference: UsageReference | null }> {
     const agent = this.getAgent(id);
-    const stored = agent ? null : await this.registry?.get(id);
-    if (!agent && !stored) return { found: false, reference: null };
-    const provider = agent?.provider ?? stored!.provider;
-    const config = agent?.config ?? buildStoredAgentConfig(stored!);
+    const stored = agent?.session ? null : await this.registry?.get(id);
+    const source = stored ?? agent;
+    if (!source) return { found: false, reference: null };
+    const config = stored ? buildStoredAgentConfig(stored) : agent!.config;
     const reference =
-      (await this.clients.get(provider)?.resolveUsageReference?.({
+      (await this.clients.get(source.provider)?.resolveUsageReference?.({
         config,
+        runtimeInfo: source.runtimeInfo ?? null,
+        persistence: source.persistence ?? null,
         session: agent?.session ?? null,
       })) ?? null;
     return { found: true, reference };

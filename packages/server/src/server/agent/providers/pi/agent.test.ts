@@ -273,7 +273,15 @@ test("Pi resolves a stored model without opening a session", async () => {
   try {
     writeFileSync(
       path.join(agentDir, "auth.json"),
-      JSON.stringify({ anthropic: { type: "oauth", access: "claude-token", refresh: "refresh" } }),
+      JSON.stringify({
+        anthropic: { type: "oauth", access: "claude-token", refresh: "refresh" },
+        "openai-codex": {
+          type: "oauth",
+          access: "codex-token",
+          accountId: "account-1",
+          refresh: "refresh",
+        },
+      }),
     );
     const client = new PiRpcAgentClient({
       logger: pino({ level: "silent" }),
@@ -286,6 +294,25 @@ test("Pi resolves a stored model without opening a session", async () => {
         session: null,
       }),
     ).toEqual({ source: "claude", input: { accessToken: "claude-token" } });
+    const runtimeInfo = {
+      provider: "pi",
+      sessionId: "saved-session",
+      model: "openai-codex/gpt-5",
+    };
+    const closed = {
+      config: createConfig({ model: "openai-codex/gpt-5" }),
+      runtimeInfo,
+      persistence: null,
+      session: null,
+    };
+    expect(await client.resolveUsageReference(closed)).toEqual({
+      source: "codex",
+      input: { accessToken: "codex-token", accountId: "account-1" },
+    });
+    expect(await client.resolveUsageReference({ ...closed, config: createConfig() })).toEqual({
+      source: "codex",
+      input: { accessToken: "codex-token", accountId: "account-1" },
+    });
   } finally {
     rmSync(agentDir, { recursive: true, force: true });
   }

@@ -751,6 +751,8 @@ export interface AgentClient {
   /** Account used by the agent. Resolving this must not start or load a session. */
   resolveUsageReference?(input: {
     config: AgentSessionConfig;
+    runtimeInfo: AgentRuntimeInfo | null;
+    persistence: AgentPersistenceHandle | null;
     session: AgentSession | null;
   }): Promise<UsageReference | null>;
   createSession(

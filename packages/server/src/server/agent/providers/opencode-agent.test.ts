@@ -440,6 +440,11 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
       source: "opencode-go",
       input: { apiKey: "go-key" },
     });
+    await session.setModel?.("openai/gpt-5");
+    expect(await client.resolveUsageReference({ config: buildConfig(cwd), session })).toEqual({
+      source: "codex",
+      input: { accessToken: "oauth-token", accountId: "acct-1" },
+    });
     await session.setModel?.("other/model");
     expect(await client.resolveUsageReference({ config: buildConfig(cwd), session })).toBeNull();
     const events: AgentStreamEvent[] = [];
@@ -475,6 +480,46 @@ describe("OpenCodeAgentClient adapter smoke tests", () => {
     });
     await session.close();
     rmSync(cwd, { recursive: true, force: true });
+  });
+
+  test("usage reference survives a model switch and default-model restart", async () => {
+    const cwd = tmpCwd();
+    const client = new OpenCodeAgentClient(logger, {
+      env: {
+        OPENCODE_AUTH_CONTENT: JSON.stringify({
+          openai: { type: "oauth", access: "oauth-token", accountId: "acct-1" },
+          "opencode-go": { type: "api", key: "go-key" },
+        }),
+      },
+    });
+    try {
+      const runtimeInfo = {
+        provider: "opencode",
+        sessionId: "saved-session",
+        model: "openai/gpt-5",
+      };
+      const closed = {
+        config: { ...buildConfig(cwd), model: "openai/gpt-5" },
+        runtimeInfo,
+        persistence: null,
+        session: null,
+      };
+      expect(await client.resolveUsageReference(closed)).toEqual({
+        source: "codex",
+        input: { accessToken: "oauth-token", accountId: "acct-1" },
+      });
+      expect(
+        await client.resolveUsageReference({
+          ...closed,
+          config: { ...buildConfig(cwd), model: null },
+        }),
+      ).toEqual({
+        source: "codex",
+        input: { accessToken: "oauth-token", accountId: "acct-1" },
+      });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   test("usage reference ignores another auth entry with a different type", async () => {

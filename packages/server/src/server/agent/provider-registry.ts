@@ -489,6 +489,7 @@ function wrapClientProvider(
   const listFeatures = inner.listFeatures?.bind(inner);
   const archiveNativeSession = inner.archiveNativeSession?.bind(inner);
   const unarchiveNativeSession = inner.unarchiveNativeSession?.bind(inner);
+  // An alias's live session can carry launch env that is fresher than stored config.
   const sessions = new WeakMap<AgentSession, AgentSession>();
   const wrapSession = (session: AgentSession) => {
     const wrapped = wrapSessionProvider(provider, session);
@@ -500,9 +501,11 @@ function wrapClientProvider(
     provider,
     capabilities: inner.capabilities,
     resolveUsageReference: inner.resolveUsageReference
-      ? ({ config, session }) =>
+      ? ({ config, runtimeInfo, persistence, session }) =>
           inner.resolveUsageReference!({
             config: { ...config, provider: inner.provider },
+            runtimeInfo,
+            persistence,
             session: session ? (sessions.get(session) ?? null) : null,
           })
       : undefined,

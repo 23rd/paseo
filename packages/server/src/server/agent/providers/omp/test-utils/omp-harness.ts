@@ -71,11 +71,13 @@ export class OmpHarness {
       providerIdleScheduler?: OmpProviderIdleScheduler;
       noTurnScheduler?: OmpNoTurnScheduler;
       usagePollScheduler?: OmpUsagePollScheduler;
+      env?: Record<string, string>;
     } = {},
   ) {
     this.client = new OmpAgentClient({
       logger: pino({ level: "silent" }),
       runtime: this.omp,
+      runtimeSettings: options.env ? { env: options.env } : undefined,
       providerIdleScheduler: options.providerIdleScheduler,
       noTurnScheduler: options.noTurnScheduler,
       usagePollScheduler: options.usagePollScheduler,
@@ -488,6 +490,20 @@ export class OmpHarness {
       config: { provider: "omp", cwd: CWD },
       session: this.requireSession(),
     });
+  }
+
+  async getStoredUsageReference(
+    model: string,
+    sessionId: string,
+    configuredModel: string | null = model,
+  ) {
+    const input = {
+      config: { provider: "omp", cwd: CWD, model: configuredModel },
+      runtimeInfo: { provider: "omp", sessionId, model },
+      persistence: { provider: "omp", sessionId },
+      session: null,
+    };
+    return this.client.resolveUsageReference(input);
   }
 
   runningToolCallIds(): string[] {

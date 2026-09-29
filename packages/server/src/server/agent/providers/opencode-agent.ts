@@ -1447,12 +1447,16 @@ export class OpenCodeAgentClient implements AgentClient {
 
   async resolveUsageReference({
     config,
+    runtimeInfo,
     session,
   }: {
     config: AgentSessionConfig;
+    runtimeInfo: AgentRuntimeInfo | null;
     session: AgentSession | null;
   }): Promise<UsageReference | null> {
-    const model = session ? (await session.getRuntimeInfo()).model : config.model;
+    const model = session
+      ? (await session.getRuntimeInfo()).model
+      : (config.model ?? runtimeInfo?.model);
     if (!model?.startsWith("openai/") && !model?.startsWith("opencode-go/")) return null;
     const env =
       session instanceof OpenCodeAgentSession

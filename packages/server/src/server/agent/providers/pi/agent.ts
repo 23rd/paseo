@@ -1172,9 +1172,8 @@ export class PiRpcAgentSession implements AgentSession {
   readonly provider: AgentProvider;
   readonly capabilities: AgentCapabilityFlags;
 
-  async getUsageContext() {
-    await this.refreshState();
-    return { provider: this.state.model?.provider, env: this.usageEnv };
+  getUsageEnvironment() {
+    return this.usageEnv;
   }
 
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
@@ -2482,14 +2481,21 @@ export class PiRpcAgentClient implements AgentClient {
 
   async resolveUsageReference({
     config,
+    runtimeInfo,
     session,
   }: {
     config: AgentSessionConfig;
+    runtimeInfo: AgentRuntimeInfo | null;
     session: AgentSession | null;
   }) {
-    const context = session instanceof PiRpcAgentSession ? await session.getUsageContext() : null;
-    const provider = context?.provider ?? config.model?.split("/")[0];
-    return resolvePiUsageReference(provider, context?.env ?? this.runtimeSettings?.env);
+    const model = session
+      ? (await session.getRuntimeInfo()).model
+      : (config.model ?? runtimeInfo?.model);
+    const env =
+      session instanceof PiRpcAgentSession
+        ? session.getUsageEnvironment()
+        : this.runtimeSettings?.env;
+    return resolvePiUsageReference(model?.split("/")[0], env);
   }
 
   async createSession(
