@@ -1650,15 +1650,15 @@ export const ru: TranslationResources = {
       title: "Пароль для {{host}}",
       label: "Пароль хоста",
     },
-    trust: {
+    hostConfirmation: {
       title: "Подключиться к этому хосту?",
       description:
         "Этот хост сможет выполнять код в приложении и обращаться к другим вашим подключённым хостам. Подключайтесь, только если узнаёте его.",
-      descriptionKnown:
+      descriptionChanged:
         "Эта ссылка меняет способ подключения к этому хосту. Хост сможет выполнять код в приложении и обращаться к другим вашим подключённым хостам. Подключайтесь, только если узнаёте его.",
       hostLabel: "Хост",
       fingerprintLabel: "Отпечаток ключа",
-      endpointLabel: "Реле",
+      relayLabel: "Реле",
       connect: "Подключить",
     },
     connectionMethods: {

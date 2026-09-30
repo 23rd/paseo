@@ -45,8 +45,7 @@ import { WorkspaceSetupDialog } from "@/components/workspace-setup-dialog";
 import { WorkspaceShortcutTargetsSubscriber } from "@/components/workspace-shortcut-targets-subscriber";
 import { FloatingPanelPortalHost } from "@/components/ui/floating-panel-portal";
 import { HostChooserModal, useHostChooser } from "@/hosts/host-chooser";
-import { HostTrustPromptModal } from "@/hosts/host-trust-prompt";
-import { isHostTrustDeclinedError } from "@/runtime/host-trust";
+import { HostConfirmationSheet } from "@/hosts/host-confirmation-sheet";
 import {
   getIsElectronRuntime,
   HEADER_INNER_HEIGHT,
@@ -608,7 +607,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
         <CommandCenter />
         <AddProjectFlowHost />
         <HostChooserModal />
-        <HostTrustPromptModal />
+        <HostConfirmationSheet />
         <ProviderSettingsHost />
         <WorkspaceSetupDialog />
         <KeyboardShortcutsDialog />
@@ -712,7 +711,6 @@ function OfferLinkListener() {
         const result = await getHostRuntimeStore().importConnectionLink(url, "openProject");
         if (!cancelled && result.status === "connected") router.replace(buildOpenProjectRoute());
       } catch (error) {
-        if (isHostTrustDeclinedError(error)) return;
         console.warn("[OfferLinkListener] Pairing link failed", error);
       }
     };

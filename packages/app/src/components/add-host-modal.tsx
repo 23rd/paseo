@@ -6,7 +6,6 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { Check, ChevronDown, ChevronRight, Eye, EyeOff, Link2 } from "lucide-react-native";
 import type { HostProfile } from "@/types/host-connection";
 import { useHosts, useHostMutations } from "@/runtime/host-runtime";
-import { isHostTrustDeclinedError, OfferApproval } from "@/runtime/host-trust";
 import {
   parseConnectionUri,
   serializeConnectionUri,
@@ -295,11 +294,23 @@ export interface AddHostModalProps {
 }
 
 export function AddHostModal({ visible, onClose, onCancel, onSaved }: AddHostModalProps) {
+  return (
+    <AddHostModalContent
+      key={String(visible)}
+      visible={visible}
+      onClose={onClose}
+      onCancel={onCancel}
+      onSaved={onSaved}
+    />
+  );
+}
+
+function AddHostModalContent({ visible, onClose, onCancel, onSaved }: AddHostModalProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
   const daemons = useHosts();
-  const { probeAndUpsertDirectConnection, probeAndUpsertConnectionFromOfferUrl } =
-    useHostMutations();
+  const { probeAndUpsertDirectConnection, beginLinkPairing } = useHostMutations();
+  const [linkPairing] = useState(() => beginLinkPairing());
   const isMobile = useIsCompactFormFactor();
 
   const [isSaving, setIsSaving] = useState(false);
@@ -313,7 +324,6 @@ export function AddHostModal({ visible, onClose, onCancel, onSaved }: AddHostMod
   const [advancedUri, setAdvancedUri] = useState("");
   const [inputResetKey, bumpInputResetKey] = useReducer((key: number) => key + 1, 0);
   const advancedTarget = useRef(new PairingTargetTracker("", true));
-  const offerApproval = useRef(new OfferApproval());
 
   const clearInput = useCallback(() => {
     setHost("");
@@ -324,7 +334,6 @@ export function AddHostModal({ visible, onClose, onCancel, onSaved }: AddHostMod
     setIsAdvancedOpen(false);
     setAdvancedUri("");
     advancedTarget.current = new PairingTargetTracker("", true);
-    offerApproval.current = new OfferApproval();
     bumpInputResetKey();
   }, []);
 
@@ -380,18 +389,13 @@ export function AddHostModal({ visible, onClose, onCancel, onSaved }: AddHostMod
       try {
         setIsSaving(true);
         setErrorMessage("");
-        const { profile, serverId, hostname } = await probeAndUpsertConnectionFromOfferUrl(
-          relayUri,
-          password || undefined,
-          offerApproval.current,
-        );
+        const result = await linkPairing.submit(relayUri, password || undefined);
+        if (result.status === "cancelled") return;
+        const { profile, serverId, hostname } = result;
         const isNewHost = !daemons.some((daemon) => daemon.serverId === serverId);
         onSaved?.({ profile, serverId, hostname, isNewHost });
         handleClose();
       } catch (error) {
-        if (isHostTrustDeclinedError(error)) {
-          return;
-        }
         setErrorMessage(
           error instanceof Error ? error.message : directConnectionLabels.invalidConnection,
         );
@@ -403,9 +407,9 @@ export function AddHostModal({ visible, onClose, onCancel, onSaved }: AddHostMod
       daemons,
       directConnectionLabels.invalidConnection,
       handleClose,
+      linkPairing,
       onSaved,
       password,
-      probeAndUpsertConnectionFromOfferUrl,
     ],
   );
 

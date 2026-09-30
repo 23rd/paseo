@@ -1671,15 +1671,15 @@ export const fr: TranslationResources = {
       title: "Mot de passe pour {{host}}",
       label: "Mot de passe de l’hôte",
     },
-    trust: {
+    hostConfirmation: {
       title: "Se connecter à cet hôte ?",
       description:
         "Cet hôte pourra exécuter du code dans cette application et accéder à vos autres hôtes connectés. Connectez-vous uniquement si vous le reconnaissez.",
-      descriptionKnown:
+      descriptionChanged:
         "Ce lien modifie la façon dont vous vous connectez à cet hôte. L'hôte pourra exécuter du code dans cette application et accéder à vos autres hôtes connectés. Connectez-vous uniquement si vous le reconnaissez.",
       hostLabel: "Hôte",
       fingerprintLabel: "Empreinte de la clé",
-      endpointLabel: "Relais",
+      relayLabel: "Relais",
       connect: "Se connecter",
     },
     connectionMethods: {

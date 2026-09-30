@@ -6,10 +6,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import type { BarcodeScanningResult, BarcodeSettings } from "expo-camera";
-import { getHostRuntimeStore } from "@/runtime/host-runtime";
+import { getHostRuntimeStore, type PasswordRequiredPairing } from "@/runtime/host-runtime";
 import { buildHostRootRoute, buildSettingsHostRoute } from "@/utils/host-routes";
 import { isWeb } from "@/constants/platform";
-import { isHostTrustDeclinedError, OfferApproval } from "@/runtime/host-trust";
 import { BackHeader } from "@/components/headers/back-header";
 import { PairLinkModal } from "@/components/pair-link-modal";
 
@@ -132,10 +131,7 @@ export default function PairScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [isPairing, setIsPairing] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
-  const [passwordRetry, setPasswordRetry] = useState<{
-    offerUrl: string;
-    approval: OfferApproval;
-  } | null>(null);
+  const [passwordRequired, setPasswordRequired] = useState<PasswordRequiredPairing | null>(null);
 
   const navigateToPairedHost = useCallback(
     (serverId: string) => {
@@ -169,32 +165,24 @@ export default function PairScanScreen() {
       if (!offerUrl) return;
 
       const store = getHostRuntimeStore();
-      if (passwordRetry) return;
+      if (passwordRequired) return;
       setIsPairing(true);
       setScanError(null);
-      const approval = new OfferApproval();
       void store
-        .importConnectionLink(
-          offerUrl,
-          source === "onboarding" ? "hostRoot" : "hostSettings",
-          approval,
-        )
+        .importConnectionLink(offerUrl, source === "onboarding" ? "hostRoot" : "hostSettings")
         .then((outcome) => {
           if (outcome.status === "connected") navigateToPairedHost(outcome.serverId);
-          else setPasswordRetry({ offerUrl, approval });
+          if (outcome.status === "password_required") setPasswordRequired(outcome);
           return outcome;
         })
-        .catch((error) => {
-          if (isHostTrustDeclinedError(error)) return;
-          setScanError(error instanceof Error ? error.message : String(error));
-        })
+        .catch((error) => setScanError(error instanceof Error ? error.message : String(error)))
         .finally(() => setIsPairing(false));
     },
-    [isPairing, navigateToPairedHost, passwordRetry, source],
+    [isPairing, navigateToPairedHost, passwordRequired, source],
   );
 
   const handleRouterBack = useCallback(() => router.back(), [router]);
-  const closePasswordModal = useCallback(() => setPasswordRetry(null), []);
+  const closePasswordModal = useCallback(() => setPasswordRequired(null), []);
   const savePasswordPairing = useCallback(
     ({ serverId }: { serverId: string }) => navigateToPairedHost(serverId),
     [navigateToPairedHost],
@@ -266,10 +254,8 @@ export default function PairScanScreen() {
         )}
       </View>
       <PairLinkModal
-        visible={passwordRetry !== null}
-        initialUrl={passwordRetry?.offerUrl}
-        initialPasswordRequired
-        approval={passwordRetry?.approval}
+        visible={passwordRequired !== null}
+        passwordRequired={passwordRequired ?? undefined}
         onClose={closePasswordModal}
         onSaved={savePasswordPairing}
       />
