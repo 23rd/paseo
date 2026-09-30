@@ -1924,7 +1924,7 @@ export class HostRuntimeStore {
     });
   }
 
-  async upsertRelayConnection(input: {
+  private async upsertRelayConnection(input: {
     serverId: string;
     relayEndpoint: string;
     useTls?: boolean;
@@ -1973,8 +1973,8 @@ export class HostRuntimeStore {
     return this.hostConfirmations.subscribe(listener);
   }
 
-  answerHostConfirmation(approved: boolean): void {
-    this.hostConfirmations.answer(approved);
+  answerHostConfirmation(requestId: number, approved: boolean): void {
+    this.hostConfirmations.answer(requestId, approved);
   }
 
   /**
@@ -2813,8 +2813,15 @@ export function useHostConfirmation(): {
     () => store.getPendingHostConfirmation(),
     () => store.getPendingHostConfirmation(),
   );
+  // The answer is bound to the request this render shows, so a tap never
+  // answers a request that replaced it.
   return useMemo(
-    () => ({ pending, answer: (approved: boolean) => store.answerHostConfirmation(approved) }),
+    () => ({
+      pending,
+      answer: (approved: boolean) => {
+        if (pending) store.answerHostConfirmation(pending.id, approved);
+      },
+    }),
     [pending, store],
   );
 }
@@ -2839,14 +2846,6 @@ export interface HostMutations {
     daemonPort?: number;
     label?: string;
   }) => Promise<{ profile: HostProfile; serverId: string; hostname: string | null }>;
-  upsertRelayConnection: (input: {
-    serverId: string;
-    relayEndpoint: string;
-    useTls?: boolean;
-    daemonPublicKeyB64: string;
-    label?: string;
-    password?: string;
-  }) => Promise<HostProfile>;
   beginLinkPairing: () => LinkPairing;
   renameHost: (serverId: string, label: string) => Promise<void>;
   setHostColor: (serverId: string, color: HostColor) => Promise<void>;
@@ -2862,7 +2861,6 @@ export function useHostMutations(): HostMutations {
       upsertDirectConnection: (input) => store.upsertDirectConnection(input),
       probeAndUpsertDirectConnection: (input) => store.probeAndUpsertDirectConnection(input),
       probeAndUpsertRemoteSshConnection: (input) => store.probeAndUpsertRemoteSshConnection(input),
-      upsertRelayConnection: (input) => store.upsertRelayConnection(input),
       beginLinkPairing: () => store.beginLinkPairing(),
       renameHost: (serverId, label) => store.renameHost(serverId, label),
       setHostColor: (serverId, color) => store.setHostColor(serverId, color),

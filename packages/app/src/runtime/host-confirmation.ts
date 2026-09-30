@@ -10,6 +10,8 @@ import {
  * changes the key, relay, or TLS setting of a saved one.
  */
 export interface HostConfirmationRequest {
+  /** Identifies this question, so an answer shown for it never answers a newer one. */
+  id: number;
   serverId: string;
   /** Grouped daemon public key the user can compare with the one their daemon shows. */
   keyFingerprint: string;
@@ -29,6 +31,7 @@ interface PendingConfirmation {
  */
 export class HostConfirmations {
   private pending: PendingConfirmation | null = null;
+  private nextRequestId = 1;
   private listeners = new Set<() => void>();
 
   getPending(): HostConfirmationRequest | null {
@@ -42,9 +45,10 @@ export class HostConfirmations {
     };
   }
 
-  answer(approved: boolean): void {
+  /** Answers the request with `requestId`; an answer for any other request is ignored. */
+  answer(requestId: number, approved: boolean): void {
     const current = this.pending;
-    if (!current) return;
+    if (!current || current.request.id !== requestId) return;
     this.pending = null;
     this.emit();
     current.resolve(approved);
@@ -56,6 +60,7 @@ export class HostConfirmations {
     const savedHost = savedHosts.find((host) => host.serverId === offer.serverId);
     if (savedHost && hostHasConnection(savedHost, connection)) return Promise.resolve(true);
     return this.ask({
+      id: this.nextRequestId++,
       serverId: offer.serverId,
       keyFingerprint: formatDaemonKeyFingerprint(connection.daemonPublicKeyB64),
       relayEndpoint: connection.relayEndpoint,
@@ -80,8 +85,9 @@ export class HostConfirmations {
 }
 
 /**
- * Shows the key material itself (not a re-hash) in groups of four, so two
- * different keys never show the same value.
+ * Shows the key material itself (not a re-hash) in groups of four. Keys longer
+ * than 16 characters show only their first and last 8, so two keys that share
+ * both ends show the same value.
  */
 function formatDaemonKeyFingerprint(daemonPublicKeyB64: string): string {
   const normalized = daemonPublicKeyB64.replace(/[^A-Za-z0-9]/g, "");

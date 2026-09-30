@@ -522,10 +522,17 @@ function answerHostConfirmations(
     if (!pending) return;
     requests.push(pending);
     store.answerHostConfirmation(
+      pending.id,
       typeof answer === "function" ? answer(pending, requests.length - 1) : answer,
     );
   });
   return requests;
+}
+
+function requirePendingConfirmation(store: HostRuntimeStore): HostConfirmationRequest {
+  const pending = store.getPendingHostConfirmation();
+  if (!pending) throw new Error("Expected a pending host confirmation");
+  return pending;
 }
 
 function createPairingStore(
@@ -3696,12 +3703,14 @@ describe("HostRuntimeStore", () => {
 
     expect(requests).toEqual([
       ...Array.from({ length: 3 }, () => ({
+        id: expect.any(Number),
         serverId: "srv_offer",
         keyFingerprint: "pkte stof fer",
         relayEndpoint: "relay.paseo.sh:443",
         kind: "newHost",
       })),
       {
+        id: expect.any(Number),
         serverId: "srv_relay",
         keyFingerprint: "AAAA",
         relayEndpoint: "relay.example:443",
@@ -3832,11 +3841,34 @@ describe("HostRuntimeStore", () => {
       expect(store.getPendingHostConfirmation()).toMatchObject({ serverId: "srv_second" }),
     );
 
-    store.answerHostConfirmation(true);
+    store.answerHostConfirmation(requirePendingConfirmation(store).id, true);
     await expect(second).resolves.toEqual({ status: "connected", serverId: "srv_second" });
     expect(store.getPendingHostConfirmation()).toBeNull();
     expect(store.getHosts().map((host) => host.serverId)).toEqual(["srv_second"]);
     store.syncHosts([]);
+  });
+
+  it("ignores an answer for a host confirmation that a newer one replaced", async () => {
+    const store = createPairingStore();
+    const first = store.importConnectionLink(encodeOfferUrl(makeOffer()), "openProject");
+    await vi.waitFor(() =>
+      expect(store.getPendingHostConfirmation()).toMatchObject({ serverId: "srv_offer" }),
+    );
+    const firstRequest = requirePendingConfirmation(store);
+    const second = store.importConnectionLink(
+      encodeOfferUrl(makeOffer({ serverId: "srv_second" })),
+      "openProject",
+    );
+    await expect(first).resolves.toEqual({ status: "cancelled" });
+
+    // Connect tapped on the first sheet as the second link arrives.
+    store.answerHostConfirmation(firstRequest.id, true);
+
+    const secondRequest = requirePendingConfirmation(store);
+    expect(secondRequest.serverId).toBe("srv_second");
+    store.answerHostConfirmation(secondRequest.id, false);
+    await expect(second).resolves.toEqual({ status: "cancelled" });
+    expect(store.getHosts()).toEqual([]);
   });
 
   it("waits for saved hosts to load before deciding whether a pairing link asks", async () => {
@@ -3891,12 +3923,8 @@ describe("HostRuntimeStore", () => {
     const store = createPairingStore({ hostname: "mbp" });
     answerHostConfirmations(store, true);
 
-    await store.upsertRelayConnection({
-      serverId: "srv_offer",
-      relayEndpoint: "relay.paseo.sh:443",
-      daemonPublicKeyB64: "pk_test_offer",
-      label: "Custom name",
-    });
+    await store.beginLinkPairing().submit(encodeOfferUrl(makeOffer()));
+    await store.renameHost("srv_offer", "Custom name");
 
     await store.beginLinkPairing().submit(encodeOfferUrl(makeOffer()));
 

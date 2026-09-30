@@ -325,18 +325,6 @@ function AddHostModalContent({ visible, onClose, onCancel, onSaved }: AddHostMod
   const [inputResetKey, bumpInputResetKey] = useReducer((key: number) => key + 1, 0);
   const advancedTarget = useRef(new PairingTargetTracker("", true));
 
-  const clearInput = useCallback(() => {
-    setHost("");
-    setPort("6767");
-    setUseTls(false);
-    setPassword("");
-    setIsPasswordVisible(false);
-    setIsAdvancedOpen(false);
-    setAdvancedUri("");
-    advancedTarget.current = new PairingTargetTracker("", true);
-    bumpInputResetKey();
-  }, []);
-
   const connectIcon = useMemo(
     () => <Link2 size={16} color={theme.colors.accentForeground} />,
     [theme.colors.accentForeground],
@@ -370,19 +358,16 @@ function AddHostModalContent({ visible, onClose, onCancel, onSaved }: AddHostMod
   );
   const header = useMemo<SheetHeader>(() => ({ title: t("pairing.direct.title") }), [t]);
 
+  // Each open mounts a fresh form (see AddHostModal), so closing needs no reset.
   const handleClose = useCallback(() => {
     if (isSaving) return;
-    clearInput();
-    setErrorMessage("");
     onClose();
-  }, [isSaving, clearInput, onClose]);
+  }, [isSaving, onClose]);
 
   const handleCancel = useCallback(() => {
     if (isSaving) return;
-    clearInput();
-    setErrorMessage("");
     (onCancel ?? onClose)();
-  }, [isSaving, clearInput, onCancel, onClose]);
+  }, [isSaving, onCancel, onClose]);
 
   const handleSaveRelay = useCallback(
     async (relayUri: string) => {
