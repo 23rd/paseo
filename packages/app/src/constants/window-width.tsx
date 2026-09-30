@@ -21,7 +21,12 @@ export function MeasuredWindowWidthProvider({
   );
 }
 
-/** The root view's actual width survives fold changes that skip RN Dimensions updates. */
+/**
+ * Width of the rendered root view; RN Dimensions until the first layout.
+ * RN Dimensions settles after the root layout during an in-place Android fold.
+ * Sizing panes from Dimensions alone made the compact panel gesture fail to
+ * attach after folding closed, so pane sizing reads this width instead.
+ */
 export function useLayoutWindowWidth(): number {
   const measuredWidth = useContext(MeasuredWindowWidthContext);
   const { width: dimensionsWidth } = useWindowDimensions();
