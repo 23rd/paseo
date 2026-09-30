@@ -6,6 +6,7 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { Check, ChevronDown, ChevronRight, Eye, EyeOff, Link2 } from "lucide-react-native";
 import type { HostProfile } from "@/types/host-connection";
 import { useHosts, useHostMutations } from "@/runtime/host-runtime";
+import { isHostTrustDeclinedError } from "@/runtime/host-trust";
 import {
   parseConnectionUri,
   serializeConnectionUri,
@@ -385,6 +386,9 @@ export function AddHostModal({ visible, onClose, onCancel, onSaved }: AddHostMod
         onSaved?.({ profile, serverId, hostname, isNewHost });
         handleClose();
       } catch (error) {
+        if (isHostTrustDeclinedError(error)) {
+          return;
+        }
         setErrorMessage(
           error instanceof Error ? error.message : directConnectionLabels.invalidConnection,
         );

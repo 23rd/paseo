@@ -1604,6 +1604,16 @@ export const zhCN: TranslationResources = {
       title: "{{host}} 的密码",
       label: "主机密码",
     },
+    trust: {
+      title: "连接到此主机？",
+      description: "此主机将能在此应用中运行代码，并访问你其他已连接的主机。仅在你认识它时才连接。",
+      descriptionKnown:
+        "此链接会改变你连接此主机的方式。该主机将能在此应用中运行代码，并访问你其他已连接的主机。仅在你认识它时才连接。",
+      hostLabel: "主机",
+      fingerprintLabel: "密钥指纹",
+      endpointLabel: "中继",
+      connect: "连接",
+    },
     connectionMethods: {
       title: "添加连接",
       direct: {

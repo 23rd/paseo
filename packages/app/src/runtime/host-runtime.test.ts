@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppStateStatus } from "react-native";
 import {
   bindHostRuntimeAppState,
@@ -31,6 +31,11 @@ import type { ReplicaRow, ReplicaRowStore } from "./replica-cache/row-store";
 
 import { subscriptionFixture } from "./subscription-fixture";
 import { readDesktopManagedLocalCredential } from "@/desktop/daemon/local-credential";
+import {
+  setHostTrustConfirmer,
+  isHostTrustDeclinedError,
+  type HostTrustRequest,
+} from "./host-trust";
 
 it("requests the managed connection credential through desktop main without a web hint", async () => {
   const requests: string[] = [];
@@ -271,8 +276,16 @@ class FakeDaemonClient {
   }
 }
 
+// Offer imports require host-trust approval. Existing tests exercise the
+// post-approval flow, so grant approval by default; the trust-gate tests below
+// override this to deny.
+beforeEach(() => {
+  setHostTrustConfirmer(async () => true);
+});
+
 afterEach(() => {
   vi.useRealTimers();
+  setHostTrustConfirmer(null);
   delete (globalThis as Record<string, unknown>).__PASEO_INITIAL_DAEMON_CONNECTION__;
   delete (globalThis as { window?: unknown }).window;
 });
@@ -3663,6 +3676,47 @@ describe("HostRuntimeStore", () => {
     const result = await store.probeAndUpsertConnectionFromOfferUrl(offerUrl, "correct-password");
     expect(result.serverId).toBe("srv_offer");
     expect(store.getHosts()[0]?.password).toBe("correct-password");
+    store.syncHosts([]);
+  });
+
+  it("does not add or connect a host from an offer link when trust is declined", async () => {
+    let connectAttempts = 0;
+    const requests: HostTrustRequest[] = [];
+    setHostTrustConfirmer(async (request) => {
+      requests.push(request);
+      return false;
+    });
+    const store = new HostRuntimeStore({
+      deps: {
+        createClient: () => new FakeDaemonClient() as unknown as DaemonClient,
+        connectToDaemon: async ({ host }) => {
+          connectAttempts += 1;
+          return {
+            client: makeConnectedProbeClient(5) as unknown as DaemonClient,
+            serverId: host.serverId,
+            hostname: host.label ?? null,
+          };
+        },
+        getClientId: async () => "cid_trust",
+      },
+      storage: createMemoryHostRuntimeStorage(),
+    });
+    const offerUrl = encodeOfferUrl(makeOffer());
+
+    // The auto-import path (deep link / QR).
+    await expect(store.importConnectionLink(offerUrl, "openProject")).rejects.toSatisfy(
+      isHostTrustDeclinedError,
+    );
+    // The paste-link / add-host path.
+    await expect(store.probeAndUpsertConnectionFromOfferUrl(offerUrl)).rejects.toSatisfy(
+      isHostTrustDeclinedError,
+    );
+
+    expect(store.getHosts()).toHaveLength(0);
+    expect(connectAttempts).toBe(0);
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.serverId).toBe("srv_offer");
+    expect(requests[0]?.keyFingerprint).toContain("pk");
     store.syncHosts([]);
   });
 

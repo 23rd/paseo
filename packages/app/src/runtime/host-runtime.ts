@@ -29,6 +29,7 @@ import {
 } from "@/utils/daemon-endpoints";
 import { resolveAppVersion } from "@/utils/app-version";
 import { ConnectionOfferSchema, type ConnectionOffer } from "@getpaseo/protocol/connection-offer";
+import { confirmHostTrust, hostTrustRequestFromOffer, HostTrustDeclinedError } from "./host-trust";
 import { shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
 import { isWeb } from "@/constants/platform";
 import { connectToDaemon, getConnectionAuthFailureReason } from "@/utils/test-daemon-connection";
@@ -1936,12 +1937,24 @@ export class HostRuntimeStore {
     });
   }
 
+  // Adding or connecting a host from a pairing link (a URL, a QR code, or a
+  // pasted link) asks the user to confirm first. Both URL-import primitives go
+  // through this check, so every pairing-link path asks once.
+  private async requireOfferTrust(offer: ConnectionOffer): Promise<void> {
+    const isKnown = this.hosts.some((host) => host.serverId === offer.serverId);
+    const trusted = await confirmHostTrust(hostTrustRequestFromOffer(offer, { isKnown }));
+    if (!trusted) {
+      throw new HostTrustDeclinedError(offer.serverId);
+    }
+  }
+
   async upsertConnectionFromOfferUrl(
     offerUrlOrFragment: string,
     label?: string,
     password?: string,
   ): Promise<HostProfile> {
     const parsed = parseOfferConnectionUrl(offerUrlOrFragment);
+    await this.requireOfferTrust(parsed.offer);
     return this.upsertConnectionFromOffer(parsed.offer, label, password ?? parsed.password);
   }
 
@@ -1951,6 +1964,7 @@ export class HostRuntimeStore {
   ): Promise<{ profile: HostProfile; serverId: string; hostname: string | null }> {
     const parsed = parseOfferConnectionUrl(offerUrlOrFragment);
     const offer = parsed.offer;
+    await this.requireOfferTrust(offer);
     const credential = password ?? parsed.password;
     const useTls = offer.relay.useTls ?? shouldUseTlsForDefaultHostedRelay(offer.relay.endpoint);
     const relayEndpoint = normalizeHostPort(offer.relay.endpoint);

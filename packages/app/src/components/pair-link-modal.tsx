@@ -10,6 +10,7 @@ import { parseRelayConnectionUri } from "@/utils/daemon-endpoints";
 import { parseConnectionOfferFromUrl } from "@getpaseo/protocol/connection-offer";
 import { AdaptiveModalSheet, AdaptiveTextInput, type SheetHeader } from "./adaptive-modal-sheet";
 import { getConnectionAuthFailureReason } from "@/utils/test-daemon-connection";
+import { isHostTrustDeclinedError } from "@/runtime/host-trust";
 import { PairingTargetTracker } from "./pair-link-credentials";
 import { Button } from "@/components/ui/button";
 import type { EditingTextInputHandle } from "@/components/ui/text-input";
@@ -170,6 +171,9 @@ function PairLinkModalContent({
         onSaved?.({ profile, serverId, hostname, isNewHost });
         handleClose();
       } catch (error) {
+        if (isHostTrustDeclinedError(error)) {
+          return;
+        }
         const message =
           error instanceof Error ? error.message : t("pairing.link.errors.unableToPair");
         setErrorMessage(message);

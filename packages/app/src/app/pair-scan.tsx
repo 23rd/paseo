@@ -9,6 +9,7 @@ import type { BarcodeScanningResult, BarcodeSettings } from "expo-camera";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { buildHostRootRoute, buildSettingsHostRoute } from "@/utils/host-routes";
 import { isWeb } from "@/constants/platform";
+import { isHostTrustDeclinedError } from "@/runtime/host-trust";
 import { BackHeader } from "@/components/headers/back-header";
 import { PairLinkModal } from "@/components/pair-link-modal";
 
@@ -175,7 +176,10 @@ export default function PairScanScreen() {
           else setPasswordOfferUrl(offerUrl);
           return outcome;
         })
-        .catch((error) => setScanError(error instanceof Error ? error.message : String(error)))
+        .catch((error) => {
+          if (isHostTrustDeclinedError(error)) return;
+          setScanError(error instanceof Error ? error.message : String(error));
+        })
         .finally(() => setIsPairing(false));
     },
     [isPairing, navigateToPairedHost, passwordOfferUrl, source],
