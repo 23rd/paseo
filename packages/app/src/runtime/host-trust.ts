@@ -2,8 +2,9 @@ import type { ConnectionOffer } from "@getpaseo/protocol/connection-offer";
 
 /**
  * A pairing offer (from a URL, a QR code, or a pasted link) names the daemon the
- * client will connect to. Before anything is added or connected, the user
- * confirms the host.
+ * client will connect to. Before a new host is added, or a saved host's
+ * connection changes, the user confirms the host. A link that matches a saved
+ * host exactly connects without asking.
  *
  * The host runtime (the model) owns the decision to ask; the UI registers a
  * confirmer that renders the prompt. When no confirmer is registered the answer
@@ -16,7 +17,7 @@ export interface HostTrustRequest {
   keyFingerprint: string;
   /** Relay endpoint the client would connect through. */
   endpoint: string;
-  /** Whether a host with this server id already exists in the registry. */
+  /** A host with this server id is saved, and the link changes its connection. */
   isKnown: boolean;
 }
 
@@ -32,6 +33,31 @@ export class HostTrustDeclinedError extends Error {
 
 export function isHostTrustDeclinedError(error: unknown): error is HostTrustDeclinedError {
   return error instanceof HostTrustDeclinedError;
+}
+
+/**
+ * The approval given during one pairing flow (one QR scan, or one open pairing
+ * modal). When the approved host then asks for a password, the retry passes the
+ * same `OfferApproval` so the user is not asked twice. It only covers the exact
+ * offer that was approved, and a new flow starts with a new one.
+ */
+export class OfferApproval {
+  private approved: ConnectionOffer | null = null;
+
+  record(offer: ConnectionOffer): void {
+    this.approved = offer;
+  }
+
+  covers(offer: ConnectionOffer): boolean {
+    const approved = this.approved;
+    return (
+      approved !== null &&
+      approved.serverId === offer.serverId &&
+      approved.daemonPublicKeyB64 === offer.daemonPublicKeyB64 &&
+      approved.relay.endpoint === offer.relay.endpoint &&
+      approved.relay.useTls === offer.relay.useTls
+    );
+  }
 }
 
 let activeConfirmer: HostTrustConfirmer | null = null;

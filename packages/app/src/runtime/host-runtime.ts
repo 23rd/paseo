@@ -14,6 +14,7 @@ import {
   normalizeStoredHostProfile,
   upsertHostConnectionInProfiles,
   registryHasConnection,
+  hostHasConnection,
   StoredHostRegistrySchema,
   type HostConnection,
   type HostProfile,
@@ -29,7 +30,12 @@ import {
 } from "@/utils/daemon-endpoints";
 import { resolveAppVersion } from "@/utils/app-version";
 import { ConnectionOfferSchema, type ConnectionOffer } from "@getpaseo/protocol/connection-offer";
-import { confirmHostTrust, hostTrustRequestFromOffer, HostTrustDeclinedError } from "./host-trust";
+import {
+  confirmHostTrust,
+  hostTrustRequestFromOffer,
+  HostTrustDeclinedError,
+  type OfferApproval,
+} from "./host-trust";
 import { shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
 import { isWeb } from "@/constants/platform";
 import { connectToDaemon, getConnectionAuthFailureReason } from "@/utils/test-daemon-connection";
@@ -1429,6 +1435,19 @@ function parseOfferConnectionUrl(input: string): { offer: ConnectionOffer; passw
   return { offer: ConnectionOfferSchema.parse(payload) };
 }
 
+function relayConnectionFromOffer(offer: ConnectionOffer): HostConnection {
+  // COMPAT(oldRelayOfferTls): added in v0.1.73, remove after 2026-11-10.
+  const useTls = offer.relay.useTls ?? shouldUseTlsForDefaultHostedRelay(offer.relay.endpoint);
+  const relayEndpoint = normalizeHostPort(offer.relay.endpoint);
+  return {
+    id: useTls ? `relay:wss:${relayEndpoint}` : `relay:${relayEndpoint}`,
+    type: "relay",
+    relayEndpoint,
+    useTls,
+    daemonPublicKeyB64: offer.daemonPublicKeyB64.trim(),
+  };
+}
+
 export function hasConfiguredLocalDaemonOverride(): boolean {
   return readConfiguredLocalDaemonOverride() !== null;
 }
@@ -1937,15 +1956,23 @@ export class HostRuntimeStore {
     });
   }
 
-  // Adding or connecting a host from a pairing link (a URL, a QR code, or a
-  // pasted link) asks the user to confirm first. Both URL-import primitives go
-  // through this check, so every pairing-link path asks once.
-  private async requireOfferTrust(offer: ConnectionOffer): Promise<void> {
-    const isKnown = this.hosts.some((host) => host.serverId === offer.serverId);
-    const trusted = await confirmHostTrust(hostTrustRequestFromOffer(offer, { isKnown }));
-    if (!trusted) {
+  // A pairing link (a URL, a QR code, or a pasted link) asks the user to
+  // confirm when it adds a new host or changes a saved host's key or relay. A
+  // link that matches the saved host connects without asking, and so does a
+  // retry that carries the approval given earlier in the same pairing flow.
+  // Both URL-import primitives go through this check.
+  private async requireOfferTrust(
+    offer: ConnectionOffer,
+    approval: OfferApproval | undefined,
+  ): Promise<void> {
+    if (approval?.covers(offer)) return;
+    const savedHost = this.hosts.find((host) => host.serverId === offer.serverId);
+    if (savedHost && hostHasConnection(savedHost, relayConnectionFromOffer(offer))) return;
+    const request = hostTrustRequestFromOffer(offer, { isKnown: savedHost !== undefined });
+    if (!(await confirmHostTrust(request))) {
       throw new HostTrustDeclinedError(offer.serverId);
     }
+    approval?.record(offer);
   }
 
   async upsertConnectionFromOfferUrl(
@@ -1954,27 +1981,20 @@ export class HostRuntimeStore {
     password?: string,
   ): Promise<HostProfile> {
     const parsed = parseOfferConnectionUrl(offerUrlOrFragment);
-    await this.requireOfferTrust(parsed.offer);
+    await this.requireOfferTrust(parsed.offer, undefined);
     return this.upsertConnectionFromOffer(parsed.offer, label, password ?? parsed.password);
   }
 
   async probeAndUpsertConnectionFromOfferUrl(
     offerUrlOrFragment: string,
     password?: string,
+    approval?: OfferApproval,
   ): Promise<{ profile: HostProfile; serverId: string; hostname: string | null }> {
     const parsed = parseOfferConnectionUrl(offerUrlOrFragment);
     const offer = parsed.offer;
-    await this.requireOfferTrust(offer);
+    await this.requireOfferTrust(offer, approval);
     const credential = password ?? parsed.password;
-    const useTls = offer.relay.useTls ?? shouldUseTlsForDefaultHostedRelay(offer.relay.endpoint);
-    const relayEndpoint = normalizeHostPort(offer.relay.endpoint);
-    const connection: HostConnection = {
-      id: useTls ? `relay:wss:${relayEndpoint}` : `relay:${relayEndpoint}`,
-      type: "relay",
-      relayEndpoint,
-      useTls,
-      daemonPublicKeyB64: offer.daemonPublicKeyB64,
-    };
+    const connection = relayConnectionFromOffer(offer);
     const probeHost: HostProfile = {
       serverId: offer.serverId,
       ...(credential ? { password: credential } : {}),
@@ -1995,13 +2015,18 @@ export class HostRuntimeStore {
   async importConnectionLink(
     url: string,
     target: PairingNavigationTarget,
+    approval?: OfferApproval,
   ): Promise<{ status: "connected"; serverId: string } | { status: "password_required" }> {
     if (target === "openProject") {
       const profile = await this.upsertConnectionFromOfferUrl(url);
       return { status: "connected", serverId: profile.serverId };
     }
     try {
-      const { serverId } = await this.probeAndUpsertConnectionFromOfferUrl(url);
+      const { serverId } = await this.probeAndUpsertConnectionFromOfferUrl(
+        url,
+        undefined,
+        approval,
+      );
       return { status: "connected", serverId };
     } catch (error) {
       if (!getConnectionAuthFailureReason(error)) throw error;
@@ -2793,6 +2818,7 @@ export interface HostMutations {
   probeAndUpsertConnectionFromOfferUrl: (
     offerUrlOrFragment: string,
     password?: string,
+    approval?: OfferApproval,
   ) => Promise<{ profile: HostProfile; serverId: string; hostname: string | null }>;
   renameHost: (serverId: string, label: string) => Promise<void>;
   setHostColor: (serverId: string, color: HostColor) => Promise<void>;
@@ -2812,8 +2838,8 @@ export function useHostMutations(): HostMutations {
       upsertConnectionFromOffer: (offer, label) => store.upsertConnectionFromOffer(offer, label),
       upsertConnectionFromOfferUrl: (url, label, password) =>
         store.upsertConnectionFromOfferUrl(url, label, password),
-      probeAndUpsertConnectionFromOfferUrl: (url, password) =>
-        store.probeAndUpsertConnectionFromOfferUrl(url, password),
+      probeAndUpsertConnectionFromOfferUrl: (url, password, approval) =>
+        store.probeAndUpsertConnectionFromOfferUrl(url, password, approval),
       renameHost: (serverId, label) => store.renameHost(serverId, label),
       setHostColor: (serverId, color) => store.setHostColor(serverId, color),
       setHostBadgeDisplay: (serverId, badgeDisplay) =>

@@ -34,6 +34,7 @@ import { readDesktopManagedLocalCredential } from "@/desktop/daemon/local-creden
 import {
   setHostTrustConfirmer,
   isHostTrustDeclinedError,
+  OfferApproval,
   type HostTrustRequest,
 } from "./host-trust";
 
@@ -3717,6 +3718,119 @@ describe("HostRuntimeStore", () => {
     expect(requests).toHaveLength(2);
     expect(requests[0]?.serverId).toBe("srv_offer");
     expect(requests[0]?.keyFingerprint).toContain("pk");
+    store.syncHosts([]);
+  });
+
+  it("connects a saved host from a matching pairing link without asking", async () => {
+    const requests: HostTrustRequest[] = [];
+    setHostTrustConfirmer(async (request) => {
+      requests.push(request);
+      return true;
+    });
+    const store = new HostRuntimeStore({
+      deps: {
+        createClient: () => new FakeDaemonClient() as unknown as DaemonClient,
+        connectToDaemon: async ({ host }) => ({
+          client: makeConnectedProbeClient(5) as unknown as DaemonClient,
+          serverId: host.serverId,
+          hostname: "paired",
+        }),
+        getClientId: async () => "cid_saved_match",
+      },
+      storage: createMemoryHostRuntimeStorage(),
+    });
+    const offerUrl = encodeOfferUrl(makeOffer());
+
+    await store.probeAndUpsertConnectionFromOfferUrl(offerUrl);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.isKnown).toBe(false);
+
+    await store.probeAndUpsertConnectionFromOfferUrl(offerUrl);
+    await store.importConnectionLink(offerUrl, "openProject");
+    expect(requests).toHaveLength(1);
+    expect(store.getHosts()).toHaveLength(1);
+    store.syncHosts([]);
+  });
+
+  it("asks when a pairing link changes a saved host's key or relay", async () => {
+    const requests: HostTrustRequest[] = [];
+    setHostTrustConfirmer(async (request) => {
+      requests.push(request);
+      return requests.length === 1;
+    });
+    const store = new HostRuntimeStore({
+      deps: {
+        createClient: () => new FakeDaemonClient() as unknown as DaemonClient,
+        connectToDaemon: async ({ host }) => ({
+          client: makeConnectedProbeClient(5) as unknown as DaemonClient,
+          serverId: host.serverId,
+          hostname: "paired",
+        }),
+        getClientId: async () => "cid_saved_change",
+      },
+      storage: createMemoryHostRuntimeStorage(),
+    });
+    await store.probeAndUpsertConnectionFromOfferUrl(encodeOfferUrl(makeOffer()));
+    const savedHost = store.getHosts()[0];
+
+    const changedKeyUrl = encodeOfferUrl(makeOffer({ daemonPublicKeyB64: "pk_other_key" }));
+    await expect(store.probeAndUpsertConnectionFromOfferUrl(changedKeyUrl)).rejects.toSatisfy(
+      isHostTrustDeclinedError,
+    );
+    const changedRelayUrl = encodeOfferUrl(
+      makeOffer({ relay: { endpoint: "relay.example:443", useTls: false } }),
+    );
+    await expect(store.importConnectionLink(changedRelayUrl, "openProject")).rejects.toSatisfy(
+      isHostTrustDeclinedError,
+    );
+
+    expect(requests.map((request) => request.isKnown)).toEqual([false, true, true]);
+    expect(store.getHosts()).toEqual([savedHost]);
+    store.syncHosts([]);
+  });
+
+  it("does not ask again for the password retry of an approved pairing link", async () => {
+    const requests: HostTrustRequest[] = [];
+    setHostTrustConfirmer(async (request) => {
+      requests.push(request);
+      return true;
+    });
+    const store = new HostRuntimeStore({
+      deps: {
+        createClient: () => new FakeDaemonClient() as unknown as DaemonClient,
+        connectToDaemon: async ({ host }) => {
+          if (host.password !== "correct-password")
+            throw new DaemonAuthenticationError("password_required");
+          return {
+            client: makeConnectedProbeClient(5) as unknown as DaemonClient,
+            serverId: host.serverId,
+            hostname: "paired",
+          };
+        },
+        getClientId: async () => "cid_password_retry",
+      },
+      storage: createMemoryHostRuntimeStorage(),
+    });
+    const offerUrl = encodeOfferUrl(makeOffer());
+    const approval = new OfferApproval();
+
+    await expect(store.importConnectionLink(offerUrl, "hostRoot", approval)).resolves.toEqual({
+      status: "password_required",
+    });
+    expect(requests).toHaveLength(1);
+
+    // A separate pairing flow for the same link has not been approved yet.
+    await expect(
+      store.probeAndUpsertConnectionFromOfferUrl(offerUrl, "wrong-password", new OfferApproval()),
+    ).rejects.toThrow();
+    expect(requests).toHaveLength(2);
+
+    await store.probeAndUpsertConnectionFromOfferUrl(offerUrl, "correct-password", approval);
+    expect(requests).toHaveLength(2);
+    expect(store.getHosts()[0]).toMatchObject({
+      serverId: "srv_offer",
+      password: "correct-password",
+    });
     store.syncHosts([]);
   });
 

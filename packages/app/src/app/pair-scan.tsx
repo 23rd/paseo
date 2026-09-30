@@ -9,7 +9,7 @@ import type { BarcodeScanningResult, BarcodeSettings } from "expo-camera";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { buildHostRootRoute, buildSettingsHostRoute } from "@/utils/host-routes";
 import { isWeb } from "@/constants/platform";
-import { isHostTrustDeclinedError } from "@/runtime/host-trust";
+import { isHostTrustDeclinedError, OfferApproval } from "@/runtime/host-trust";
 import { BackHeader } from "@/components/headers/back-header";
 import { PairLinkModal } from "@/components/pair-link-modal";
 
@@ -132,7 +132,10 @@ export default function PairScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [isPairing, setIsPairing] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
-  const [passwordOfferUrl, setPasswordOfferUrl] = useState<string | null>(null);
+  const [passwordRetry, setPasswordRetry] = useState<{
+    offerUrl: string;
+    approval: OfferApproval;
+  } | null>(null);
 
   const navigateToPairedHost = useCallback(
     (serverId: string) => {
@@ -166,14 +169,19 @@ export default function PairScanScreen() {
       if (!offerUrl) return;
 
       const store = getHostRuntimeStore();
-      if (passwordOfferUrl) return;
+      if (passwordRetry) return;
       setIsPairing(true);
       setScanError(null);
+      const approval = new OfferApproval();
       void store
-        .importConnectionLink(offerUrl, source === "onboarding" ? "hostRoot" : "hostSettings")
+        .importConnectionLink(
+          offerUrl,
+          source === "onboarding" ? "hostRoot" : "hostSettings",
+          approval,
+        )
         .then((outcome) => {
           if (outcome.status === "connected") navigateToPairedHost(outcome.serverId);
-          else setPasswordOfferUrl(offerUrl);
+          else setPasswordRetry({ offerUrl, approval });
           return outcome;
         })
         .catch((error) => {
@@ -182,11 +190,11 @@ export default function PairScanScreen() {
         })
         .finally(() => setIsPairing(false));
     },
-    [isPairing, navigateToPairedHost, passwordOfferUrl, source],
+    [isPairing, navigateToPairedHost, passwordRetry, source],
   );
 
   const handleRouterBack = useCallback(() => router.back(), [router]);
-  const closePasswordModal = useCallback(() => setPasswordOfferUrl(null), []);
+  const closePasswordModal = useCallback(() => setPasswordRetry(null), []);
   const savePasswordPairing = useCallback(
     ({ serverId }: { serverId: string }) => navigateToPairedHost(serverId),
     [navigateToPairedHost],
@@ -258,9 +266,10 @@ export default function PairScanScreen() {
         )}
       </View>
       <PairLinkModal
-        visible={passwordOfferUrl !== null}
-        initialUrl={passwordOfferUrl ?? undefined}
+        visible={passwordRetry !== null}
+        initialUrl={passwordRetry?.offerUrl}
         initialPasswordRequired
+        approval={passwordRetry?.approval}
         onClose={closePasswordModal}
         onSaved={savePasswordPairing}
       />

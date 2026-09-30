@@ -6,7 +6,7 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { Check, ChevronDown, ChevronRight, Eye, EyeOff, Link2 } from "lucide-react-native";
 import type { HostProfile } from "@/types/host-connection";
 import { useHosts, useHostMutations } from "@/runtime/host-runtime";
-import { isHostTrustDeclinedError } from "@/runtime/host-trust";
+import { isHostTrustDeclinedError, OfferApproval } from "@/runtime/host-trust";
 import {
   parseConnectionUri,
   serializeConnectionUri,
@@ -313,6 +313,7 @@ export function AddHostModal({ visible, onClose, onCancel, onSaved }: AddHostMod
   const [advancedUri, setAdvancedUri] = useState("");
   const [inputResetKey, bumpInputResetKey] = useReducer((key: number) => key + 1, 0);
   const advancedTarget = useRef(new PairingTargetTracker("", true));
+  const offerApproval = useRef(new OfferApproval());
 
   const clearInput = useCallback(() => {
     setHost("");
@@ -323,6 +324,7 @@ export function AddHostModal({ visible, onClose, onCancel, onSaved }: AddHostMod
     setIsAdvancedOpen(false);
     setAdvancedUri("");
     advancedTarget.current = new PairingTargetTracker("", true);
+    offerApproval.current = new OfferApproval();
     bumpInputResetKey();
   }, []);
 
@@ -381,6 +383,7 @@ export function AddHostModal({ visible, onClose, onCancel, onSaved }: AddHostMod
         const { profile, serverId, hostname } = await probeAndUpsertConnectionFromOfferUrl(
           relayUri,
           password || undefined,
+          offerApproval.current,
         );
         const isNewHost = !daemons.some((daemon) => daemon.serverId === serverId);
         onSaved?.({ profile, serverId, hostname, isNewHost });

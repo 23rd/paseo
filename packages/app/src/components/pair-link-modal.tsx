@@ -10,7 +10,7 @@ import { parseRelayConnectionUri } from "@/utils/daemon-endpoints";
 import { parseConnectionOfferFromUrl } from "@getpaseo/protocol/connection-offer";
 import { AdaptiveModalSheet, AdaptiveTextInput, type SheetHeader } from "./adaptive-modal-sheet";
 import { getConnectionAuthFailureReason } from "@/utils/test-daemon-connection";
-import { isHostTrustDeclinedError } from "@/runtime/host-trust";
+import { isHostTrustDeclinedError, OfferApproval } from "@/runtime/host-trust";
 import { PairingTargetTracker } from "./pair-link-credentials";
 import { Button } from "@/components/ui/button";
 import type { EditingTextInputHandle } from "@/components/ui/text-input";
@@ -65,6 +65,8 @@ export interface PairLinkModalProps {
   visible: boolean;
   initialUrl?: string;
   initialPasswordRequired?: boolean;
+  /** Approval already given for `initialUrl`, so its password retry does not ask again. */
+  approval?: OfferApproval;
   onClose: () => void;
   onCancel?: () => void;
   onSaved?: (result: {
@@ -79,6 +81,7 @@ export function PairLinkModal({
   visible,
   initialUrl,
   initialPasswordRequired = false,
+  approval,
   onClose,
   onCancel,
   onSaved,
@@ -89,6 +92,7 @@ export function PairLinkModal({
       visible={visible}
       initialUrl={initialUrl}
       initialPasswordRequired={initialPasswordRequired}
+      approval={approval}
       onClose={onClose}
       onCancel={onCancel}
       onSaved={onSaved}
@@ -100,6 +104,7 @@ function PairLinkModalContent({
   visible,
   initialUrl,
   initialPasswordRequired = false,
+  approval,
   onClose,
   onCancel,
   onSaved,
@@ -112,6 +117,7 @@ function PairLinkModalContent({
 
   const offerUrlRef = useRef(initialUrl ?? "");
   const targetTracker = useRef(new PairingTargetTracker(initialUrl));
+  const offerApproval = useRef(approval ?? new OfferApproval());
   const inputRef = useRef<EditingTextInputHandle>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -166,6 +172,7 @@ function PairLinkModalContent({
         const { profile, serverId, hostname } = await probeAndUpsertConnectionFromOfferUrl(
           raw,
           password || undefined,
+          offerApproval.current,
         );
         const isNewHost = !daemons.some((daemon) => daemon.serverId === serverId);
         onSaved?.({ profile, serverId, hostname, isNewHost });
