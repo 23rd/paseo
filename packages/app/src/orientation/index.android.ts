@@ -1,22 +1,17 @@
 import * as ScreenOrientation from "expo-screen-orientation";
 import { useEffect, useState } from "react";
-import { Dimensions, Platform } from "react-native";
+import { Dimensions } from "react-native";
 import { useLayoutWindowWidth } from "@/constants/window-width";
 import { getAndroidPhysicalScreenSize } from "./screen-geometry";
 import { resolveAndroidOrientationPolicy } from "./policy";
 
-const isAndroid = Platform.OS === "android";
-
 export function useAdaptiveOrientation(): boolean {
   const layoutWindowWidth = useLayoutWindowWidth();
-  const [screen, setScreen] = useState(() =>
-    isAndroid ? getAndroidPhysicalScreenSize() : Dimensions.get("screen"),
-  );
+  const [screen, setScreen] = useState(getAndroidPhysicalScreenSize);
   const policy = resolveAndroidOrientationPolicy(screen);
-  const [ready, setReady] = useState(() => !isAndroid || policy === "system");
+  const [ready, setReady] = useState(() => policy === "system");
 
   useEffect(() => {
-    if (!isAndroid) return;
     const updateScreen = () => {
       const nextScreen = getAndroidPhysicalScreenSize();
       setScreen((current) =>
@@ -31,8 +26,6 @@ export function useAdaptiveOrientation(): boolean {
   }, [layoutWindowWidth]);
 
   useEffect(() => {
-    if (!isAndroid) return;
-
     let active = true;
     const request =
       policy === "portrait"

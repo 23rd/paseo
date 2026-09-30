@@ -1,10 +1,15 @@
 import { StyleSheet } from "react-native-unistyles";
-import { BREAKPOINTS } from "./breakpoints";
 import { REGISTERED_THEMES } from "./theme";
 
 StyleSheet.configure({
   themes: REGISTERED_THEMES,
-  breakpoints: BREAKPOINTS,
+  breakpoints: {
+    xs: 0,
+    sm: 576,
+    md: 720,
+    lg: 992,
+    xl: 1200,
+  },
   settings: {
     adaptiveThemes: true,
   },

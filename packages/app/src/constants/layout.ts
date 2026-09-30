@@ -1,6 +1,5 @@
+import { useUnistyles } from "react-native-unistyles";
 import { isWeb } from "@/constants/platform";
-import { useLayoutWindowWidth } from "@/constants/window-width";
-import { isCompactWindowWidth } from "@/styles/breakpoints";
 
 export const FOOTER_HEIGHT = 75;
 
@@ -35,11 +34,12 @@ export {
 } from "./platform";
 
 /**
- * The rendered root width owns pane layout. Android fold transitions can
- * leave both RN Dimensions and Unistyles' runtime breakpoint at the old size.
+ * Reactive hook — re-renders the component when the breakpoint changes.
+ * Always use this instead of reading UnistylesRuntime.breakpoint directly.
  */
 export function useIsCompactFormFactor(): boolean {
-  return isCompactWindowWidth(useLayoutWindowWidth());
+  const { rt } = useUnistyles();
+  return rt.breakpoint === "xs" || rt.breakpoint === "sm";
 }
 
 // SplitContainer relies on dnd-kit and DOM-backed accessibility helpers.
