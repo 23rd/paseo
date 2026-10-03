@@ -3228,7 +3228,7 @@ describe("create_agent MCP tool", () => {
     const workdir = await mkdtemp(join(tmpdir(), "mcp-create-fast-child-"));
     const storage = new AgentStorage(join(workdir, "agents"), logger);
     const parentClient = new HeldTurnAgentClient("claude", false);
-    const childClient = new HeldTurnAgentClient("codex", false, true);
+    const childClient = new HeldTurnAgentClient("codex", false, { finishTurnsDuringStart: true });
     const agentManager = new AgentManager({
       clients: { claude: parentClient, codex: childClient },
       registry: storage,
@@ -3738,6 +3738,11 @@ const HELD_TURN_CAPABILITIES = {
   supportsToolInvocations: false,
 } as const;
 
+interface HeldTurnOptions {
+  /** Run the whole turn before the turn-start request returns. */
+  finishTurnsDuringStart?: boolean;
+}
+
 /**
  * Provider session that records every prompt it receives. With `holdTurns`, a started
  * turn stays running until `finishTurn()` so a caller's bounded wait can run out first.
@@ -3753,7 +3758,7 @@ class HeldTurnAgentSession implements AgentSession {
   constructor(
     readonly provider: AgentProvider,
     private readonly holdTurns: boolean,
-    private readonly finishTurnsDuringStart = false,
+    private readonly options: HeldTurnOptions = {},
   ) {}
 
   /** Hold the next turn's acknowledgment, as a provider awaiting its turn-start request does. */
@@ -3773,7 +3778,7 @@ class HeldTurnAgentSession implements AgentSession {
     this.prompts.push(typeof prompt === "string" ? prompt : JSON.stringify(prompt));
     await this.turnStartGate;
     const turnId = randomUUID();
-    if (this.finishTurnsDuringStart) {
+    if (this.options.finishTurnsDuringStart) {
       // The whole turn runs before the turn-start request returns, as a provider whose
       // start acknowledgment arrives together with the turn's completion does.
       this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
@@ -3862,7 +3867,7 @@ class HeldTurnAgentClient implements AgentClient {
   constructor(
     readonly provider: AgentProvider,
     private readonly holdTurns: boolean,
-    private readonly finishTurnsDuringStart = false,
+    private readonly options: HeldTurnOptions = {},
   ) {}
 
   async isAvailable(): Promise<boolean> {
@@ -3870,11 +3875,7 @@ class HeldTurnAgentClient implements AgentClient {
   }
 
   async createSession(): Promise<AgentSession> {
-    const session = new HeldTurnAgentSession(
-      this.provider,
-      this.holdTurns,
-      this.finishTurnsDuringStart,
-    );
+    const session = new HeldTurnAgentSession(this.provider, this.holdTurns, this.options);
     this.sessions.push(session);
     return session;
   }
