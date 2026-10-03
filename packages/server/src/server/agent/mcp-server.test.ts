@@ -3224,32 +3224,16 @@ describe("create_agent MCP tool", () => {
     );
   });
 
-  it("notifies the caller when a created child finishes before the finish watcher is armed", async () => {
-    const workdir = await mkdtemp(join(tmpdir(), "mcp-create-fast-child-finish-"));
+  it("notifies the caller when a created child finishes its initial turn before the turn start returns", async () => {
+    const workdir = await mkdtemp(join(tmpdir(), "mcp-create-fast-child-"));
     const storage = new AgentStorage(join(workdir, "agents"), logger);
     const parentClient = new HeldTurnAgentClient("claude", false);
-    const childClient = new HeldTurnAgentClient("codex", true);
+    const childClient = new HeldTurnAgentClient("codex", false, true);
     const agentManager = new AgentManager({
       clients: { claude: parentClient, codex: childClient },
       registry: storage,
       logger,
     });
-
-    let releaseObservedStart!: () => void;
-    const observedStart = new Promise<void>((resolve) => {
-      releaseObservedStart = resolve;
-    });
-    let releaseCreate!: () => void;
-    const createMayContinue = new Promise<void>((resolve) => {
-      releaseCreate = resolve;
-    });
-
-    const waitForAgentRunStart = agentManager.waitForAgentRunStart.bind(agentManager);
-    agentManager.waitForAgentRunStart = async (agentId, options) => {
-      await waitForAgentRunStart(agentId, options);
-      releaseObservedStart();
-      await createMayContinue;
-    };
 
     try {
       const parent = await agentManager.createAgent(
@@ -3265,50 +3249,21 @@ describe("create_agent MCP tool", () => {
         logger,
       });
 
-      const pendingCreate = invokeToolWithParsedInput(registeredTool(server, "create_agent"), {
+      const response = await invokeToolWithParsedInput(registeredTool(server, "create_agent"), {
         ...subagentCurrentWorkspace(),
         title: "Fast Child",
         provider: "codex/gpt-5.4",
         initialPrompt: "Finish immediately",
       });
-
-      await observedStart;
-      expect(agentManager.listAgents()).toEqual([
-        expect.objectContaining({ id: parent.id, lifecycle: "idle" }),
-        expect.objectContaining({ lifecycle: "running" }),
-      ]);
-
-      const childSession = childClient.sessions[0];
-      expect(childSession).toBeDefined();
-      childSession!.finishTurn();
-
-      await vi.waitFor(() => {
-        expect(
-          agentManager
-            .listAgents()
-            .find((agent) => agent.id !== parent.id),
-        ).toEqual(
-          expect.objectContaining({
-            lifecycle: "idle",
-            attention: expect.objectContaining({
-              requiresAttention: true,
-              attentionReason: "finished",
-            }),
-          }),
-        );
-      });
-
-      releaseCreate();
-      const response = await pendingCreate;
       const childId = z.object({ agentId: z.string() }).parse(response.structuredContent).agentId;
 
       await vi.waitFor(() => {
-        expect(parentClient.sessions[0]?.prompts).toHaveLength(1);
+        const parentPrompts = parentClient.sessions[0]!.prompts;
+        expect(parentPrompts).toHaveLength(1);
+        expect(parentPrompts[0]).toContain(childId);
+        expect(parentPrompts[0]).toContain("finished");
       });
-      expect(parentClient.sessions[0]?.prompts[0]).toContain(childId);
-      expect(parentClient.sessions[0]?.prompts[0]).toContain("finished");
     } finally {
-      releaseCreate();
       await removeAgentStateDir(agentManager, storage, workdir);
     }
   });
@@ -3798,6 +3753,7 @@ class HeldTurnAgentSession implements AgentSession {
   constructor(
     readonly provider: AgentProvider,
     private readonly holdTurns: boolean,
+    private readonly finishTurnsDuringStart = false,
   ) {}
 
   /** Hold the next turn's acknowledgment, as a provider awaiting its turn-start request does. */
@@ -3817,6 +3773,13 @@ class HeldTurnAgentSession implements AgentSession {
     this.prompts.push(typeof prompt === "string" ? prompt : JSON.stringify(prompt));
     await this.turnStartGate;
     const turnId = randomUUID();
+    if (this.finishTurnsDuringStart) {
+      // The whole turn runs before the turn-start request returns, as a provider whose
+      // start acknowledgment arrives together with the turn's completion does.
+      this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+      this.pushEvent({ type: "turn_completed", provider: this.provider, turnId });
+      return { turnId };
+    }
     this.activeTurnId = turnId;
     setTimeout(() => {
       this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
@@ -3899,6 +3862,7 @@ class HeldTurnAgentClient implements AgentClient {
   constructor(
     readonly provider: AgentProvider,
     private readonly holdTurns: boolean,
+    private readonly finishTurnsDuringStart = false,
   ) {}
 
   async isAvailable(): Promise<boolean> {
@@ -3906,7 +3870,11 @@ class HeldTurnAgentClient implements AgentClient {
   }
 
   async createSession(): Promise<AgentSession> {
-    const session = new HeldTurnAgentSession(this.provider, this.holdTurns);
+    const session = new HeldTurnAgentSession(
+      this.provider,
+      this.holdTurns,
+      this.finishTurnsDuringStart,
+    );
     this.sessions.push(session);
     return session;
   }
