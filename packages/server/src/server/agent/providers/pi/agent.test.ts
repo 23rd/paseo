@@ -1560,9 +1560,11 @@ describe("PiRpcAgentSession", () => {
 
   test("resumes a session on the requested model when it differs from the session's", async () => {
     const pi = new FakePi();
+    const requestedModel = { ...RESTRICTED_THINKING_MODEL, provider: "openrouter", id: "a" };
     pi.queueSessionSetup((session) => {
       session.state = { ...session.state, model: RESTRICTED_THINKING_MODEL };
-      session.setModelResult = { ...RESTRICTED_THINKING_MODEL, provider: "openrouter", id: "a" };
+      session.models = [RESTRICTED_THINKING_MODEL, requestedModel];
+      session.setModelResult = requestedModel;
     });
 
     const session = await createClient(pi).resumeSession({
@@ -1575,6 +1577,25 @@ describe("PiRpcAgentSession", () => {
 
     expect(pi.latestSession().setModelRequests).toEqual([{ provider: "openrouter", modelId: "a" }]);
     await expect(session.getRuntimeInfo()).resolves.toMatchObject({ model: "openrouter/a" });
+    expect(session.describePersistence()?.metadata?.model).toBe("openrouter/a");
+  });
+
+  test("fails the resume when switching to an available model fails", async () => {
+    const pi = new FakePi();
+    const requestedModel = { ...RESTRICTED_THINKING_MODEL, provider: "openrouter", id: "a" };
+    pi.queueSessionSetup((session) => {
+      session.state = { ...session.state, model: RESTRICTED_THINKING_MODEL };
+      session.models = [RESTRICTED_THINKING_MODEL, requestedModel];
+    });
+
+    await expect(
+      createClient(pi).resumeSession({
+        provider: "pi",
+        sessionId: "pi-session-1",
+        nativeHandle: "/tmp/native-pi-session",
+        metadata: { cwd: "/workspace/project", model: "openrouter/a" },
+      }),
+    ).rejects.toThrow("FakePi setModel requires setModelResult to be scripted");
   });
 
   test("adopts Pi's clamped thinking level when resuming a session", async () => {

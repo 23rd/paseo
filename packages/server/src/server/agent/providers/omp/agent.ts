@@ -2411,15 +2411,15 @@ export class OmpAgentClient implements AgentClient {
     if (!reference?.provider || requestedModel === modelToId(state.model)) {
       return state;
     }
-    try {
-      await runtimeSession.setModel(reference.provider, reference.id);
-    } catch (error) {
+    const availableModels = await runtimeSession.getAvailableModels();
+    if (!availableModels.some((model) => modelToId(model) === requestedModel)) {
       this.logger.warn(
-        { err: error, requestedModel, sessionModel: modelToId(state.model) },
+        { requestedModel, sessionModel: modelToId(state.model) },
         "OMP resumed on the session's model because the requested model is unavailable",
       );
       return state;
     }
+    await runtimeSession.setModel(reference.provider, reference.id);
     return runtimeSession.getState();
   }
 

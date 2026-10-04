@@ -89,6 +89,31 @@ test("OMP resumes a session whose model was removed on the model OMP falls back 
   expect(session.describePersistence()?.metadata?.model).toBe("openrouter/fallback");
 });
 
+test("OMP resumes a session on the requested model when it differs from the session's", async () => {
+  const runtime = new FakeOmp();
+  const requestedModel = { provider: "openrouter", id: "requested" };
+  runtime.queueSessionSetup((session) => {
+    session.state = { ...session.state, model: { provider: "openrouter", id: "recorded" } };
+    session.models = [requestedModel];
+    session.setModelResult = requestedModel;
+  });
+  const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+
+  const session = await client.resumeSession({
+    provider: "omp",
+    sessionId: "omp-session-1",
+    nativeHandle: "/tmp/omp-session.jsonl",
+    metadata: { cwd: "/workspace/project", model: "openrouter/requested" },
+  });
+  onTestFinished(() => session.close());
+
+  expect(runtime.latestSession().setModelRequests).toEqual([
+    { provider: "openrouter", modelId: "requested" },
+  ]);
+  await expect(session.getRuntimeInfo()).resolves.toMatchObject({ model: "openrouter/requested" });
+  expect(session.describePersistence()?.metadata?.model).toBe("openrouter/requested");
+});
+
 class ManualIdleScheduler implements OmpProviderIdleScheduler {
   private readonly retries: Array<() => void> = [];
   private readonly waiters: Array<{ count: number; resolve: () => void }> = [];
