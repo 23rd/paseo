@@ -453,3 +453,21 @@ export async function expectHostOnlineWithoutError(page: Page): Promise<void> {
   await expect(page.getByTestId("host-page-identity")).toContainText("Online");
   await expect(page.getByTestId("host-connection-error")).toHaveCount(0);
 }
+
+export async function scrollSettingsSidebarToEnd(page: Page): Promise<number> {
+  const scrollBody = page.getByTestId("settings-sidebar-scroll-body");
+  await expect(scrollBody).toBeVisible();
+  await scrollBody.hover();
+  await page.mouse.wheel(0, 10_000);
+  const readOffset = () => scrollBody.evaluate((node) => node.scrollTop);
+  await expect
+    .poll(readOffset, { message: "settings sidebar must overflow for this check" })
+    .toBeGreaterThan(0);
+  await expect.poll(async () => (await readOffset()) - (await readOffset())).toBe(0);
+  return readOffset();
+}
+
+export async function expectSettingsSidebarScrollOffset(page: Page, offset: number): Promise<void> {
+  const scrollBody = page.getByTestId("settings-sidebar-scroll-body");
+  await expect.poll(() => scrollBody.evaluate((node) => node.scrollTop)).toBe(offset);
+}

@@ -40,6 +40,8 @@ import {
   expectSettingsHostPickerLabel,
   openSettingsHostSection,
   removeCurrentHostFromSettings,
+  scrollSettingsSidebarToEnd,
+  expectSettingsSidebarScrollOffset,
 } from "../support/helpers/settings";
 import { getServerId } from "../support/helpers/server-id";
 import { expectAppRoute } from "../support/helpers/route-assertions";
@@ -75,6 +77,23 @@ test.describe("Settings sidebar navigation", () => {
 
     await clickSettingsBackToWorkspace(page);
     await expect(page).not.toHaveURL(/\/settings(\/|$)/);
+  });
+
+  test.describe("in a short window", () => {
+    test.use({ viewport: { width: 1280, height: 480 } });
+
+    test("selecting a section keeps the sidebar scroll position", async ({ page }) => {
+      const serverId = getServerId();
+      await gotoAppShell(page);
+      await openSettings(page);
+      const offset = await scrollSettingsSidebarToEnd(page);
+
+      await openSettingsHostSection(page, serverId, "plugins");
+      await expectSettingsSidebarScrollOffset(page, offset);
+
+      await openSettingsHostSection(page, serverId, "terminals");
+      await expectSettingsSidebarScrollOffset(page, offset);
+    });
   });
 
   test("/h/[serverId]/settings redirects to the host connections section", async ({ page }) => {
