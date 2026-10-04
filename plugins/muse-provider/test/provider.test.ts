@@ -641,7 +641,7 @@ for (const [variants, expected] of [
     });
   });
 }
-test("catalogue offers every effort a model accepts and describes the ones Muse describes", async () => {
+test("catalogue loads models whose effort tiers carry descriptions", async () => {
   const deepest = "Use this for deepest analysis and complex fixes.";
   const row = (modelId: string, isDefault: boolean) => ({
     modelId,
@@ -669,7 +669,7 @@ test("catalogue offers every effort a model accepts and describes the ones Muse 
     { id: "low" },
     { id: "medium" },
     { id: "high" },
-    { id: "xhigh", description: deepest },
+    { id: "xhigh" },
     { id: "max", isDefault: true },
   ];
   expect(result).toMatchObject({

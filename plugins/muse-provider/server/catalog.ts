@@ -65,9 +65,6 @@ export function presentCatalog(response: z.infer<typeof catalogSchema>): Provide
   const models = response.models.map((model) => {
     const supported =
       Array.isArray(model.variants) && model.variants.length > 0 ? model.variants : efforts;
-    const descriptions = new Map(
-      model.reasoningEffortVariants.map((variant) => [variant.tier, variant.description]),
-    );
     return {
       id: model.modelId,
       label: model.displayLabel,
@@ -76,7 +73,6 @@ export function presentCatalog(response: z.infer<typeof catalogSchema>): Provide
       thinkingOptions: supported.map((id) => ({
         id,
         label: id,
-        description: descriptions.get(id),
         isDefault: id === model.defaultReasoningEffort,
       })),
       defaultThinkingOptionId: model.defaultReasoningEffort ?? undefined,
