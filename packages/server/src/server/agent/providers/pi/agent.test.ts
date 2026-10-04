@@ -1580,6 +1580,26 @@ describe("PiRpcAgentSession", () => {
     expect(session.describePersistence()?.metadata?.model).toBe("openrouter/a");
   });
 
+  test("resumes on a requested model written as provider:id", async () => {
+    const pi = new FakePi();
+    const requestedModel = { ...RESTRICTED_THINKING_MODEL, provider: "openrouter", id: "a" };
+    pi.queueSessionSetup((session) => {
+      session.state = { ...session.state, model: RESTRICTED_THINKING_MODEL };
+      session.models = [RESTRICTED_THINKING_MODEL, requestedModel];
+      session.setModelResult = requestedModel;
+    });
+
+    const session = await createClient(pi).resumeSession({
+      provider: "pi",
+      sessionId: "pi-session-1",
+      nativeHandle: "/tmp/native-pi-session",
+      metadata: { cwd: "/workspace/project", model: "openrouter:a" },
+    });
+    onTestFinished(() => session.close());
+
+    await expect(session.getRuntimeInfo()).resolves.toMatchObject({ model: "openrouter/a" });
+  });
+
   test("fails the resume when switching to an available model fails", async () => {
     const pi = new FakePi();
     const requestedModel = { ...RESTRICTED_THINKING_MODEL, provider: "openrouter", id: "a" };
