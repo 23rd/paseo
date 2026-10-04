@@ -8,31 +8,37 @@ import { createTestLogger } from "../../../test-utils/test-logger.js";
 import type { AgentSession, AgentStreamEvent } from "../agent-sdk-types.js";
 import { GenericACPAgentClient } from "./generic-acp-agent.js";
 
-describe("GenericACPAgentClient permission requests when a turn fails", () => {
-  test("answers a permission request left open by a failed turn with cancelled", async () => {
-    await withFakeACPAgent(async (command, cwd) => {
-      const client = new GenericACPAgentClient({ logger: createTestLogger(), command });
-      const session = await client.createSession({ provider: "acp", cwd });
-      try {
-        const events = collectEvents(session);
+describe("GenericACPAgentClient permission requests when a turn ends early", () => {
+  test.each([
+    { ending: "fail", terminalEvent: "turn_failed" },
+    { ending: "cancel", terminalEvent: "turn_canceled" },
+  ] as const)(
+    "answers a permission request left open by a $terminalEvent turn with cancelled",
+    async ({ ending, terminalEvent }) => {
+      await withFakeACPAgent(ending, async (command, cwd) => {
+        const client = new GenericACPAgentClient({ logger: createTestLogger(), command });
+        const session = await client.createSession({ provider: "acp", cwd });
+        try {
+          const events = collectEvents(session);
 
-        await session.startTurn("turn one");
-        await waitForEvent(events, "turn_failed");
-        expect(hasEvent(events, "permission_requested")).toBe(true);
-        expect(session.getPendingPermissions()).toEqual([]);
+          await session.startTurn("turn one");
+          await waitForEvent(events, terminalEvent);
+          expect(hasEvent(events, "permission_requested")).toBe(true);
+          expect(session.getPendingPermissions()).toEqual([]);
 
-        const replyStart = events.length;
-        await session.startTurn("turn two");
-        await waitForEvent(events, "turn_completed", replyStart);
+          const replyStart = events.length;
+          await session.startTurn("turn two");
+          await waitForEvent(events, "turn_completed", replyStart);
 
-        expect(assistantText(events.slice(replyStart))).toBe(
-          'perm-1 answered: {"outcome":{"outcome":"cancelled"}}',
-        );
-      } finally {
-        await session.close();
-      }
-    });
-  });
+          expect(assistantText(events.slice(replyStart))).toBe(
+            'perm-1 answered: {"outcome":{"outcome":"cancelled"}}',
+          );
+        } finally {
+          await session.close();
+        }
+      });
+    },
+  );
 });
 
 function collectEvents(session: AgentSession): AgentStreamEvent[] {
@@ -72,23 +78,26 @@ function assistantText(events: AgentStreamEvent[]): string {
 }
 
 async function withFakeACPAgent(
+  ending: "fail" | "cancel",
   run: (command: [string, ...string[]], cwd: string) => Promise<void>,
 ): Promise<void> {
   const testDir = await mkdtemp(path.join(tmpdir(), "paseo-acp-permission-turn-failure-"));
   try {
     const scriptPath = path.join(testDir, "fake-acp-agent.cjs");
     await writeFile(scriptPath, fakeACPAgentScript, "utf8");
-    await run([process.execPath, scriptPath], testDir);
+    await run([process.execPath, scriptPath, ending], testDir);
   } finally {
     await rm(testDir, { recursive: true, force: true });
   }
 }
 
-// Turn one asks for permission, then fails while the request is still open.
+// Turn one asks for permission, then fails or is cancelled while the request is
+// still open.
 // Later turns report whether that request was ever answered.
 const fakeACPAgentScript = `
 const readline = require("node:readline");
 
+const ending = process.argv[2];
 const rl = readline.createInterface({ input: process.stdin });
 let promptCount = 0;
 let permissionAnswer = null;
@@ -130,7 +139,11 @@ rl.on("line", (line) => {
         },
       });
       setTimeout(() => {
-        write({ id: message.id, error: { code: -32603, message: "turn failed with a permission open" } });
+        if (ending === "cancel") {
+          write({ id: message.id, result: { stopReason: "cancelled" } });
+        } else {
+          write({ id: message.id, error: { code: -32603, message: "turn failed with a permission open" } });
+        }
       }, 50);
       return;
     }
