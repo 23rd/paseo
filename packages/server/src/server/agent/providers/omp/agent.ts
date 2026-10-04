@@ -445,7 +445,6 @@ function buildResumeStartInput(input: {
     protocolMode: "rpc-ui",
     env: input.launchContext?.env,
     session: input.sessionFile,
-    model: input.resumeConfig.model,
     thinkingOptionId: normalizeOmpThinkingOption(input.resumeConfig.thinkingOptionId) ?? undefined,
     ...(input.launchMode.modeId ? { modeId: input.launchMode.modeId } : {}),
     ...(input.launchMode.extraArgs ? { extraArgs: input.launchMode.extraArgs } : {}),
@@ -2373,16 +2372,17 @@ export class OmpAgentClient implements AgentClient {
         resumeConfig.config,
         startInput.env,
       );
-      const initialState = await this.restoreFastMode(
-        runtimeSession,
-        resumeConfig.config,
-        await runtimeSession.getState(),
-      );
+      const resumedState = await this.applyResumeModel(runtimeSession, resumeConfig.model);
+      const config = {
+        ...resumeConfig.config,
+        model: modelToId(resumedState.model) ?? resumeConfig.config.model,
+      };
+      const initialState = await this.restoreFastMode(runtimeSession, config, resumedState);
       return new OmpAgentSession({
         runtimeSession,
         hostTools,
-        restartRuntime: this.buildRestartRuntime(startInput, resumeConfig.config, launchContext),
-        config: resumeConfig.config,
+        restartRuntime: this.buildRestartRuntime(startInput, config, launchContext),
+        config,
         initialState,
         currentModeId: launchMode.modeId,
         logger: this.logger,
@@ -2398,6 +2398,29 @@ export class OmpAgentClient implements AgentClient {
       await runtimeSession.close().catch(() => undefined);
       throw error;
     }
+  }
+
+  // OMP resumes a session on the model it recorded, or on its default when that model
+  // is gone. Switching afterwards keeps a removed model from blocking the resume.
+  private async applyResumeModel(
+    runtimeSession: OmpRuntimeSession,
+    requestedModel: string | undefined,
+  ): Promise<OmpSessionState> {
+    const state = await runtimeSession.getState();
+    const reference = parseModelReference(requestedModel ?? null);
+    if (!reference?.provider || requestedModel === modelToId(state.model)) {
+      return state;
+    }
+    try {
+      await runtimeSession.setModel(reference.provider, reference.id);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, requestedModel, sessionModel: modelToId(state.model) },
+        "OMP resumed on the session's model because the requested model is unavailable",
+      );
+      return state;
+    }
+    return runtimeSession.getState();
   }
 
   private buildRestartRuntime(
